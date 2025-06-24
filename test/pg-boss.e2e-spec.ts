@@ -44,7 +44,7 @@ describe("PGBossModule (e2e)", () => {
 
   beforeAll(async () => {
     jest.setTimeout(60_000);
-    postgres = await new PostgreSqlContainer().start();
+    postgres = await new PostgreSqlContainer("postgres:16-alpine").start();
   });
 
   afterAll(async () => {
