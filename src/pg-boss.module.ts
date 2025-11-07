@@ -29,7 +29,8 @@ import {
 })
 export class PGBossModule
   extends ConfigurableModuleClass
-  implements OnModuleInit, OnApplicationBootstrap, OnModuleDestroy {
+  implements OnModuleInit, OnApplicationBootstrap, OnModuleDestroy
+{
   private readonly logger = new Logger(this.constructor.name);
   private instance: PGBoss | undefined;
 
@@ -37,7 +38,7 @@ export class PGBossModule
     private readonly moduleRef: ModuleRef,
     private readonly handlerScannerService: HandlerScannerService,
     @Inject(MODULE_OPTIONS_TOKEN)
-    private readonly options: PGBossModuleOptions
+    private readonly options: PGBossModuleOptions,
   ) {
     super();
   }
@@ -95,9 +96,9 @@ export class PGBossModule
           options.retryAttempts,
           options.retryDelay,
           options.verboseRetryLog,
-          options.toRetry
-        )
-      )
+          options.toRetry,
+        ),
+      ),
     );
 
     return pgBoss;
@@ -132,14 +133,14 @@ export class PGBossModule
   private async setupWorkers() {
     if (this.options.disableWorkers) {
       this.logger.log(
-        "disableWorkers is set so will not attempt to register them"
+        "disableWorkers is set so will not attempt to register them",
       );
       return;
     }
 
     if (!this.instance) {
       throw new Error(
-        "setupWorkers must be called after onApplicationBootstrap"
+        "setupWorkers must be called after onApplicationBootstrap",
       );
     }
 
@@ -149,20 +150,20 @@ export class PGBossModule
       jobHandlers.map(async (handler) => {
         if (!this.instance) {
           throw new Error(
-            "setupWorkers must be called after onApplicationBootstrap"
+            "setupWorkers must be called after onApplicationBootstrap",
           );
         }
 
         const workerID = await this.instance.work(
           handler.metadata.jobName,
           handler.metadata.workOptions,
-          handler.callback
+          handler.callback,
         );
         this.logger.log(
           { workerID, jobName: handler.metadata.jobName },
-          "Registered Worker"
+          "Registered Worker",
         );
-      })
+      }),
     );
   }
 

@@ -34,5 +34,5 @@ export type PGBossModuleOptions = {
   /**
    * PG Boss stop options to run. Checkout https://github.com/timgit/pg-boss/tree/9.0.3/docs#stopoptions for more
    */
-  stopOptions?: StopOptions
+  stopOptions?: StopOptions;
 } & ConstructorOptions;

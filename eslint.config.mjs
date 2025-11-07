@@ -36,7 +36,7 @@ export default [
 
       parserOptions: {
         project: "tsconfig.json",
-        tsconfigRootDir: "/Users/adri/Projects/loctax/nest-pg-boss",
+        tsconfigRootDir: __dirname,
       },
     },
 
