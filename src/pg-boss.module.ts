@@ -9,7 +9,7 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import { MetadataScanner, ModuleRef } from "@nestjs/core";
-import * as PGBoss from "pg-boss";
+import PGBoss from "pg-boss";
 import { defer, lastValueFrom } from "rxjs";
 import { handleRetry } from "./utils";
 import { PGBossJobModule } from "./pg-boss-job.module";

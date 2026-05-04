@@ -4,7 +4,7 @@ import {
   Injectable,
   SetMetadata,
 } from "@nestjs/common";
-import * as PGBoss from "pg-boss";
+import PGBoss from "pg-boss";
 import { HandlerMetadata } from "./interfaces/handler-metadata.interface";
 import { PG_BOSS_JOB_METADATA } from "./pg-boss.constants";
 import { getJobToken } from "./utils";
