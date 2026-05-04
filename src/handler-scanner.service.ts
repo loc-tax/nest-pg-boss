@@ -43,7 +43,17 @@ export class HandlerScannerService {
 
     return providerInstances
       .flatMap(({ instance }) => {
-        const instancePrototype = Object.getPrototypeOf(instance || {});
+        // Many DI entries have no usable instance to scan: undefined for
+        // unresolved scoped providers, primitives for `useValue` config tokens.
+        // Falling through to `Object.getPrototypeOf({})` would scan
+        // `Object.prototype` and run a `Reflect.getMetadata` lookup against
+        // every method on it (`toString`, `hasOwnProperty`, ...) for every
+        // such provider on bootstrap.
+        if (instance == null || typeof instance !== "object") {
+          return [];
+        }
+
+        const instancePrototype = Object.getPrototypeOf(instance);
         return this.metadataScanner
           .getAllMethodNames(instancePrototype)
           .map((methodName) => {
