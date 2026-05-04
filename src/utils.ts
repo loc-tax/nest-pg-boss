@@ -1,10 +1,35 @@
 import { Logger } from "@nestjs/common";
-import { delay, Observable, retryWhen, scan } from "rxjs";
+import { delay, retryWhen, scan, type Observable } from "rxjs";
+import type { PGBossModuleOptions } from "./interfaces/pg-boss-options.interface";
 
 const logger = new Logger("PGBossModule");
 
 export function getJobToken(jobName: string): string {
   return `JobService(${jobName})`;
+}
+
+/**
+ * When `disableWorkers` is on, default `noSupervisor` and `noScheduling` to
+ * `true` so the PGBoss instance does no internal polling. Explicit values
+ * (including `false`) are preserved so callers can opt back in to being the
+ * supervisor or scheduling leader.
+ */
+export function applyDisableWorkersDefaults(
+  options: PGBossModuleOptions,
+): PGBossModuleOptions {
+  if (!options.disableWorkers) {
+    return options;
+  }
+
+  return {
+    ...options,
+    noSupervisor: Object.hasOwn(options, "noSupervisor")
+      ? options.noSupervisor
+      : true,
+    noScheduling: Object.hasOwn(options, "noScheduling")
+      ? options.noScheduling
+      : true,
+  };
 }
 
 export function handleRetry(

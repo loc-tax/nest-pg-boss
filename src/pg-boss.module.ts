@@ -1,26 +1,26 @@
 import {
-  DynamicModule,
   Global,
   Inject,
   Logger,
   Module,
-  OnApplicationBootstrap,
-  OnModuleDestroy,
-  OnModuleInit,
+  type DynamicModule,
+  type OnApplicationBootstrap,
+  type OnModuleDestroy,
+  type OnModuleInit,
 } from "@nestjs/common";
 import { MetadataScanner, ModuleRef } from "@nestjs/core";
 import PGBoss from "pg-boss";
 import { defer, lastValueFrom } from "rxjs";
-import { handleRetry } from "./utils";
+import { applyDisableWorkersDefaults, handleRetry } from "./utils";
 import { PGBossJobModule } from "./pg-boss-job.module";
 import { HandlerScannerService } from "./handler-scanner.service";
-import { PGBossModuleOptions } from "./interfaces/pg-boss-options.interface";
-import { Job } from "./job.service";
+import type { PGBossModuleOptions } from "./interfaces/pg-boss-options.interface";
+import type { Job } from "./job.service";
 import {
-  ASYNC_OPTIONS_TYPE,
   ConfigurableModuleClass,
   MODULE_OPTIONS_TOKEN,
-  OPTIONS_TYPE,
+  type ASYNC_OPTIONS_TYPE,
+  type OPTIONS_TYPE,
 } from "./pg-boss.module-definition";
 
 @Global()
@@ -83,20 +83,22 @@ export class PGBossModule
   }
 
   private static async createInstanceFactory(options: PGBossModuleOptions) {
+    const resolvedOptions = applyDisableWorkersDefaults(options);
+
     const pgBoss = await lastValueFrom(
       defer(async () => {
-        const boss = new PGBoss(options);
+        const boss = new PGBoss(resolvedOptions);
 
-        boss.on("error", options.onError);
+        boss.on("error", resolvedOptions.onError);
 
         await boss.start();
         return boss;
       }).pipe(
         handleRetry(
-          options.retryAttempts,
-          options.retryDelay,
-          options.verboseRetryLog,
-          options.toRetry,
+          resolvedOptions.retryAttempts,
+          resolvedOptions.retryDelay,
+          resolvedOptions.verboseRetryLog,
+          resolvedOptions.toRetry,
         ),
       ),
     );
