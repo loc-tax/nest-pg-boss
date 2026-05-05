@@ -76,8 +76,7 @@
         "displayName": "e2e",
         "rootDir": "test",
         "moduleFileExtensions": ["js", "json", "ts"],
-        "testRegex": ".e2e-spec.ts$",
-        "testTimeout": 60000,
+        "testRegex": ".*\\.e2e-spec\\.ts$",
         "transform": {
           "^.+\\.(t|j)s$": "ts-jest"
         },

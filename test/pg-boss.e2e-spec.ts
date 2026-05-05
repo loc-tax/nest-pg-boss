@@ -35,11 +35,12 @@ class FoobarService {
   }
 }
 
+jest.setTimeout(60_000);
+
 describe("PGBossModule (e2e)", () => {
   let postgres: StartedPostgreSqlContainer;
 
   beforeAll(async () => {
-    jest.setTimeout(60_000);
     postgres = await new PostgreSqlContainer("postgres:16-alpine").start();
   });
 
