@@ -1,11 +1,13 @@
-import { INestApplication, Injectable } from "@nestjs/common";
-import { Test, TestingModule } from "@nestjs/testing";
-import { Job } from "pg-boss";
+import { setTimeout as sleep } from "node:timers/promises";
+import { Injectable, type INestApplication } from "@nestjs/common";
+import { Test, type TestingModule } from "@nestjs/testing";
+import PGBoss, { type Job } from "pg-boss";
 import {
   PostgreSqlContainer,
-  StartedPostgreSqlContainer,
+  type StartedPostgreSqlContainer,
 } from "@testcontainers/postgresql";
-import { JobService, PGBossModule, createJob } from "../src";
+import { PGBossModule, createJob, type JobService } from "../src";
+import type { PGBossModuleOptions } from "../src/interfaces/pg-boss-options.interface";
 
 interface FoobarJobData {
   foo: string;
@@ -13,9 +15,6 @@ interface FoobarJobData {
 }
 
 const FoobarJob = createJob<FoobarJobData>("foobar");
-
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 @Injectable()
 class FoobarService {
@@ -36,14 +35,12 @@ class FoobarService {
   }
 }
 
+jest.setTimeout(60_000);
+
 describe("PGBossModule (e2e)", () => {
   let postgres: StartedPostgreSqlContainer;
-  let app: INestApplication;
-
-  let foobarService: FoobarService;
 
   beforeAll(async () => {
-    jest.setTimeout(60_000);
     postgres = await new PostgreSqlContainer("postgres:16-alpine").start();
   });
 
@@ -57,7 +54,9 @@ describe("PGBossModule (e2e)", () => {
     }
   });
 
-  beforeEach(async () => {
+  const buildApp = async (
+    overrides: Partial<PGBossModuleOptions> = {},
+  ): Promise<INestApplication> => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [
         PGBossModule.forRoot({
@@ -70,43 +69,113 @@ describe("PGBossModule (e2e)", () => {
             console.error(error);
           },
           disableWorkers: false,
+          ...overrides,
         }),
         PGBossModule.forJobs([FoobarJob]),
       ],
       providers: [FoobarService],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-
+    const app = moduleFixture.createNestApplication();
     await app.init();
-    foobarService = app.get<FoobarService>(FoobarService);
-  });
+    return app;
+  };
 
-  afterEach(async () => {
-    await app.close();
-  });
+  describe("with workers enabled", () => {
+    let app: INestApplication;
+    let foobarService: FoobarService;
 
-  it("handles a Job", async () => {
-    jest.setTimeout(60_000);
+    beforeEach(async () => {
+      app = await buildApp();
+      foobarService = app.get<FoobarService>(FoobarService);
+    });
 
-    await foobarService.sendJob();
+    afterEach(async () => {
+      await app.close();
+    });
 
-    // Wait for processing
-    let lastError: Error | null = null;
+    it("handles a Job", async () => {
+      await foobarService.sendJob();
 
-    for (let retry = 0; retry < 25; retry++) {
-      try {
-        expect(foobarService.datastore).toHaveLength(1);
+      // Wait for processing
+      let lastError: Error | null = null;
 
-        lastError = null;
-        break;
-      } catch (err) {
-        lastError = err as Error;
-        await sleep(2_000);
+      for (let retry = 0; retry < 25; retry++) {
+        try {
+          expect(foobarService.datastore).toHaveLength(1);
+
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err as Error;
+          await sleep(2_000);
+        }
       }
-    }
 
-    expect(foobarService.datastore[0]).toEqual({ foo: "oof", bar: true });
-    expect(lastError).toBeNull();
+      expect(foobarService.datastore[0]).toEqual({ foo: "oof", bar: true });
+      expect(lastError).toBeNull();
+    });
+  });
+
+  describe("with disableWorkers: true", () => {
+    let app: INestApplication;
+    let foobarService: FoobarService;
+    let boss: PGBoss;
+
+    beforeEach(async () => {
+      app = await buildApp({ disableWorkers: true });
+      foobarService = app.get<FoobarService>(FoobarService);
+      boss = app.get<PGBoss>(PGBoss);
+    });
+
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it("does not run user job handlers but still allows send()", async () => {
+      await foobarService.sendJob();
+
+      // Give pg-boss enough time that any rogue worker would have picked it up.
+      await sleep(5_000);
+
+      expect(foobarService.datastore).toHaveLength(0);
+
+      const queueSize = await boss.getQueueSize("foobar");
+      expect(queueSize).toBeGreaterThan(0);
+    });
+
+    it("disables internal supervisor and scheduling polling by default", () => {
+      // pg-boss stores the resolved config on the instance; verifying it here
+      // ensures the auto-coupling actually reached PGBoss.
+      const config = (boss as unknown as { config: Record<string, unknown> })
+        .config;
+      expect(config.noSupervisor).toBe(true);
+      expect(config.noScheduling).toBe(true);
+    });
+  });
+
+  describe("with disableWorkers: true and explicit overrides", () => {
+    let app: INestApplication;
+    let boss: PGBoss;
+
+    beforeEach(async () => {
+      app = await buildApp({
+        disableWorkers: true,
+        noSupervisor: false,
+        noScheduling: false,
+      });
+      boss = app.get<PGBoss>(PGBoss);
+    });
+
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it("preserves explicit noSupervisor/noScheduling: false", () => {
+      const config = (boss as unknown as { config: Record<string, unknown> })
+        .config;
+      expect(config.noSupervisor).toBe(false);
+      expect(config.noScheduling).toBe(false);
+    });
   });
 });

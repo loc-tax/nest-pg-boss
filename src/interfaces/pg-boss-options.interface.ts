@@ -30,6 +30,19 @@ export type PGBossModuleOptions = {
    * @see https://github.com/timgit/pg-boss/blob/master/docs/readme.md#error
    */
   onError: (err: Error) => void;
+  /**
+   * If `true`, registered `@PGBossHandler` job handlers will not be wired up
+   * on `onApplicationBootstrap`. The PGBoss instance is still created and
+   * `start()` is still called so this process can `send()` jobs and run
+   * migrations.
+   *
+   * Note: enabling this will also default pg-boss's `noSupervisor` and
+   * `noScheduling` to `true`, so the instance does not perform any internal
+   * polling (maintenance, archive, cron). To opt back in to either, pass
+   * `noSupervisor: false` or `noScheduling: false` explicitly — useful when
+   * you want a non-consumer process to still act as the maintenance/cron
+   * leader.
+   */
   disableWorkers?: boolean;
   /**
    * PG Boss stop options to run. Checkout https://github.com/timgit/pg-boss/tree/9.0.3/docs#stopoptions for more

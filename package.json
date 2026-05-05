@@ -20,7 +20,7 @@
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
     "lint:fix": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-    "test": "jest --config ./test/jest-e2e.json"
+    "test": "jest"
   },
   "peerDependencies": {
     "@nestjs/common": "^11.1.8",
@@ -61,20 +61,27 @@
     "typescript": "6.0.3"
   },
   "jest": {
-    "moduleFileExtensions": [
-      "js",
-      "json",
-      "ts"
-    ],
-    "rootDir": "src",
-    "testRegex": ".*\\.spec\\.ts$",
-    "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
-    },
-    "collectCoverageFrom": [
-      "**/*.(t|j)s"
-    ],
-    "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "projects": [
+      {
+        "displayName": "unit",
+        "rootDir": "src",
+        "moduleFileExtensions": ["js", "json", "ts"],
+        "testRegex": ".*\\.spec\\.ts$",
+        "transform": {
+          "^.+\\.(t|j)s$": "ts-jest"
+        },
+        "testEnvironment": "node"
+      },
+      {
+        "displayName": "e2e",
+        "rootDir": "test",
+        "moduleFileExtensions": ["js", "json", "ts"],
+        "testRegex": ".*\\.e2e-spec\\.ts$",
+        "transform": {
+          "^.+\\.(t|j)s$": "ts-jest"
+        },
+        "testEnvironment": "node"
+      }
+    ]
   }
 }
