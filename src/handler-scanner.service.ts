@@ -54,6 +54,13 @@ export class HandlerScannerService {
         }
 
         const instancePrototype = Object.getPrototypeOf(instance);
+        if (
+          instancePrototype == null ||
+          instancePrototype === Object.prototype
+        ) {
+          return [];
+        }
+
         return this.metadataScanner
           .getAllMethodNames(instancePrototype)
           .map((methodName) => {

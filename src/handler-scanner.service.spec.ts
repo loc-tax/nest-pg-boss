@@ -96,6 +96,22 @@ describe("HandlerScannerService.getJobHandlers", () => {
     expect(getAllMethodNamesSpy).not.toHaveBeenCalled();
   });
 
+  it("skips plain-object value providers without scanning Object.prototype", () => {
+    const scanner = new MetadataScanner();
+    const getAllMethodNamesSpy = jest.spyOn(scanner, "getAllMethodNames");
+
+    const container = buildContainer([
+      [
+        { instance: { someMethod: () => {} } },
+        { instance: Object.create(null) },
+      ],
+    ]);
+    const service = new HandlerScannerService(scanner, container);
+
+    expect(service.getJobHandlers()).toHaveLength(0);
+    expect(getAllMethodNamesSpy).not.toHaveBeenCalled();
+  });
+
   it("only scans prototypes of real object instances when mixed with empties", () => {
     class FooHandler {
       handle() {}
