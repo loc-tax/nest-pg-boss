@@ -1,6 +1,6 @@
 {
   "name": "@loctax/nest-pg-boss",
-  "version": "5.0.7",
+  "version": "5.1.0",
   "description": "Use pg-boss in your NestJS app",
   "author": "Julian Tölle <julian.toelle97@gmail.com> & Loctax team",
   "license": "MIT",
@@ -65,7 +65,11 @@
       {
         "displayName": "unit",
         "rootDir": "src",
-        "moduleFileExtensions": ["js", "json", "ts"],
+        "moduleFileExtensions": [
+          "js",
+          "json",
+          "ts"
+        ],
         "testRegex": ".*\\.spec\\.ts$",
         "transform": {
           "^.+\\.(t|j)s$": "ts-jest"
@@ -75,7 +79,11 @@
       {
         "displayName": "e2e",
         "rootDir": "test",
-        "moduleFileExtensions": ["js", "json", "ts"],
+        "moduleFileExtensions": [
+          "js",
+          "json",
+          "ts"
+        ],
         "testRegex": ".*\\.e2e-spec\\.ts$",
         "transform": {
           "^.+\\.(t|j)s$": "ts-jest"
