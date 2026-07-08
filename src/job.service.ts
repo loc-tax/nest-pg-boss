@@ -16,6 +16,15 @@ export class JobService<JobData extends object> {
     private readonly pgBoss: PGBoss,
   ) {}
 
+  /**
+   * The pg-boss queue name this service sends to. Exposed so callers that need the queue
+   * name (e.g. to look it up in another query) can read it off the injected job service
+   * instead of importing the name constant separately.
+   */
+  get queueName(): string {
+    return this.name;
+  }
+
   async send(
     data: JobData,
     options: PGBoss.SendOptions,
