@@ -4,10 +4,14 @@
     "config:recommended",
     ":semanticCommits",
     ":semanticCommitTypeAll(chore)",
+    ":automergePatch",
     ":automergeMinor",
     ":automergeBranch",
     ":automergeLinters",
     ":automergeTesters",
     ":automergeTypes"
-  ]
+  ],
+  // Wait 1 day before creating PRs to mitigate supply chain attacks
+  // This ensures malicious packages are more likely to be detected before we update
+  minimumReleaseAge: "1 day",
 }

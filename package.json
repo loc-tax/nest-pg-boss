@@ -1,9 +1,10 @@
 {
   "name": "@loctax/nest-pg-boss",
-  "version": "5.2.0",
+  "version": "5.2.1",
   "description": "Use pg-boss in your NestJS app",
   "author": "Julian Tölle <julian.toelle97@gmail.com> & Loctax team",
   "license": "MIT",
+  "packageManager": "pnpm@11.10.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/loc-tax/nest-pg-boss.git"
