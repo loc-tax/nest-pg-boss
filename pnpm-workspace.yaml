@@ -1,4 +1,7 @@
 allowBuilds:
+  # The native binaries ship as platform-specific optionalDependencies; the
+  # postinstall script only prints a sponsorship notice.
+  '@swc/core': false
   '@nestjs/core': false
   cpu-features: false
   protobufjs: false

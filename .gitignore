@@ -35,4 +35,3 @@ lerna-debug.log*
 
 .claude/*
 !.claude/commands
-tsconfig.build.tsbuildinfo

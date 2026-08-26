@@ -35,8 +35,6 @@ class FoobarService {
   }
 }
 
-jest.setTimeout(60_000);
-
 describe("PGBossModule (e2e)", () => {
   let postgres: StartedPostgreSqlContainer;
 
@@ -108,6 +106,7 @@ describe("PGBossModule (e2e)", () => {
           break;
         } catch (err) {
           lastError = err as Error;
+          // oxlint-disable-next-line no-await-in-loop -- this is a sequential poll-and-back-off; running the attempts in parallel would defeat the retry.
           await sleep(2_000);
         }
       }
