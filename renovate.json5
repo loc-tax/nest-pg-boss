@@ -1,17 +1,54 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
+  extends: [
     "config:recommended",
     ":semanticCommits",
     ":semanticCommitTypeAll(chore)",
-    ":automergePatch",
-    ":automergeMinor",
-    ":automergeBranch",
+    // Major bumps of dev tooling are safe to automerge: CI proves them.
     ":automergeLinters",
     ":automergeTesters",
-    ":automergeTypes"
+    ":automergeTypes",
   ],
-  // Wait 1 day before creating PRs to mitigate supply chain attacks
-  // This ensures malicious packages are more likely to be detected before we update
+
+  // Wait 1 day before creating PRs to mitigate supply chain attacks.
+  // This ensures malicious packages are more likely to be detected before we update.
   minimumReleaseAge: "1 day",
+
+  // Treat patch and minor as distinct update types so they can land in separate grouped PRs.
+  separateMinorPatch: true,
+
+  // Merge through the REST API as the Renovate app instead of GitHub's native auto-merge.
+  // Native auto-merge is a single shot at a fixed merge method, and Renovate derives that method from the repo's
+  // `allow_squash_merge` rather than from the `Main` ruleset's `allowed_merge_methods`, so it asks for squash and
+  // gets rejected. The REST path falls back squash -> merge -> rebase until one is accepted.
+  platformAutomerge: false,
+
+  packageRules: [
+    {
+      description: "All patch-level updates in one PR.",
+      matchUpdateTypes: ["patch", "pin", "digest"],
+      groupName: "all patch dependencies",
+      groupSlug: "all-patch",
+      automerge: true,
+    },
+    {
+      description: "All minor-level updates in one PR.",
+      matchUpdateTypes: ["minor"],
+      groupName: "all minor dependencies",
+      groupSlug: "all-minor",
+      automerge: true,
+    },
+    {
+      // Listed last so it wins over the patch and minor rules above.
+      // Majors are included: a workflow bump that breaks CI fails on its own branch and therefore cannot automerge.
+      description: "All GitHub Actions updates in one PR, majors included.",
+      matchManagers: ["github-actions"],
+      groupName: "github actions",
+      groupSlug: "github-actions",
+      automerge: true,
+    },
+  ],
+
+  // Everything not matched above -- major bumps of real dependencies -- stays one PR per package
+  // (or per monorepo, via `group:monorepos` in config:recommended) and is not automerged.
 }
