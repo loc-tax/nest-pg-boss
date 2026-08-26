@@ -1,0 +1,35 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "promise", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "env": {
+    "node": true,
+    "es2022": true
+  },
+  "ignorePatterns": ["dist"],
+  "rules": {
+    // The package leans on inference for return types, and needs `any` at the
+    // pg-boss boundary.
+    "typescript/explicit-function-return-type": "off",
+    "typescript/explicit-module-boundary-types": "off",
+    "typescript/no-explicit-any": "off",
+    // Nest modules are legitimately empty classes carrying only a decorator.
+    "typescript/no-extraneous-class": ["error", { "allowWithDecorator": true }],
+    // `import "reflect-metadata"` is a required side-effect import: it installs
+    // the polyfill that Reflect.defineMetadata/getMetadata rely on.
+    "import/no-unassigned-import": ["error", { "allow": ["**/reflect-metadata"] }]
+  },
+  "overrides": [
+    {
+      "files": ["**/*.spec.ts", "**/*.e2e-spec.ts"],
+      "rules": {
+        // Test doubles and no-op handler stubs are empty on purpose.
+        "typescript/no-empty-function": "off"
+      }
+    }
+  ]
+}

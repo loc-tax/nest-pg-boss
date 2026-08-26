@@ -84,11 +84,11 @@ export class JobService<JobData extends object> {
     jobs: Omit<PGBoss.JobInsert<JobData>, "name">[],
     options: PGBoss.InsertOptions,
   ): Promise<any> {
-    const _jobs: PGBoss.JobInsert<JobData>[] = jobs.map((job) => ({
+    const namedJobs: PGBoss.JobInsert<JobData>[] = jobs.map((job) => ({
       ...job,
       name: this.name,
     }));
-    return this.pgBoss.insert(_jobs, options);
+    return this.pgBoss.insert(namedJobs, options);
   }
 
   async schedule(cron: string, data: JobData, options: PGBoss.ScheduleOptions) {

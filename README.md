@@ -121,14 +121,14 @@ You can optionally pass an object with [WorkOptions](https://github.com/timgit/p
 ## Test
 
 ```bash
-# unit tests
-$ npm run test
+# everything
+$ pnpm test
 
-# e2e tests
-$ npm run test:e2e
+# unit tests only, no Docker required
+$ pnpm test:unit
 
-# test coverage
-$ npm run test:cov
+# e2e tests only, starts a Postgres testcontainer and needs Docker
+$ pnpm test:e2e
 ```
 
 ## License

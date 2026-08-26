@@ -39,7 +39,7 @@ export class HandlerScannerService {
       .map(({ providers }) => providers);
 
     const providerInstances: InstanceWrapper<InjectableInterface>[] =
-      providersMap.flatMap((map) => [...map.values()]);
+      providersMap.flatMap((map) => Array.from(map.values()));
 
     return providerInstances
       .flatMap(({ instance }) => {

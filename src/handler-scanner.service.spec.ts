@@ -65,12 +65,13 @@ describe("HandlerScannerService.getJobHandlers", () => {
     const service = new HandlerScannerService(new MetadataScanner(), container);
 
     const handlers = service.getJobHandlers();
+    // oxlint-disable-next-line unicorn/no-array-sort -- map() already returned a fresh array, so sorting in place mutates nothing the caller can see.
     expect(handlers.map((h) => h.metadata.jobName).sort()).toEqual(["a", "b"]);
   });
 
   it("skips providers with no instance without scanning Object.prototype", () => {
     const scanner = new MetadataScanner();
-    const getAllMethodNamesSpy = jest.spyOn(scanner, "getAllMethodNames");
+    const getAllMethodNamesSpy = vi.spyOn(scanner, "getAllMethodNames");
 
     const container = buildContainer([
       [{ instance: undefined }, { instance: null }],
@@ -85,7 +86,7 @@ describe("HandlerScannerService.getJobHandlers", () => {
 
   it("skips providers whose instance is a primitive (value providers)", () => {
     const scanner = new MetadataScanner();
-    const getAllMethodNamesSpy = jest.spyOn(scanner, "getAllMethodNames");
+    const getAllMethodNamesSpy = vi.spyOn(scanner, "getAllMethodNames");
 
     const container = buildContainer([
       [{ instance: "config-string" }, { instance: 42 }, { instance: true }],
@@ -98,7 +99,7 @@ describe("HandlerScannerService.getJobHandlers", () => {
 
   it("skips plain-object value providers without scanning Object.prototype", () => {
     const scanner = new MetadataScanner();
-    const getAllMethodNamesSpy = jest.spyOn(scanner, "getAllMethodNames");
+    const getAllMethodNamesSpy = vi.spyOn(scanner, "getAllMethodNames");
 
     const container = buildContainer([
       [
@@ -123,7 +124,7 @@ describe("HandlerScannerService.getJobHandlers", () => {
     });
 
     const scanner = new MetadataScanner();
-    const getAllMethodNamesSpy = jest.spyOn(scanner, "getAllMethodNames");
+    const getAllMethodNamesSpy = vi.spyOn(scanner, "getAllMethodNames");
 
     const container = buildContainer([
       [
