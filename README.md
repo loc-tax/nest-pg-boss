@@ -118,6 +118,29 @@ You can optionally pass an object with [WorkOptions](https://github.com/timgit/p
 @FoobarJob.Handle({ teamSize: 10, teamConcurrency: 2 })
 ```
 
+#### Inspect registered handlers
+
+`HandlerScannerService` is exported from the global module. It returns every
+`@Job.Handle()` method found in the Nest container together with its job name
+and `WorkOptions`, which is useful for reporting per-queue capacity (e.g. a
+`teamSize` gauge next to the queue backlog):
+
+```typescript
+@Injectable()
+class QueueMetricsService implements OnApplicationBootstrap {
+  constructor(private readonly handlerScanner: HandlerScannerService) {}
+
+  onApplicationBootstrap() {
+    for (const { metadata } of this.handlerScanner.getJobHandlers()) {
+      console.log(metadata.jobName, metadata.workOptions.teamSize ?? 1);
+    }
+  }
+}
+```
+
+Call it from `onApplicationBootstrap` or later so every provider has been
+instantiated; the scan only sees providers that already have an instance.
+
 ## Test
 
 ```bash

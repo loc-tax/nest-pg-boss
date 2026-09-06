@@ -26,6 +26,10 @@ import {
 @Global()
 @Module({
   providers: [MetadataScanner, HandlerScannerService],
+  // Exported so consumers can enumerate the registered handlers and their
+  // WorkOptions (e.g. to report per-queue capacity metrics) without
+  // duplicating the metadata scan.
+  exports: [HandlerScannerService],
 })
 export class PGBossModule
   extends ConfigurableModuleClass
