@@ -42,7 +42,7 @@
     "@nestjs/testing": "11.2.3",
     "@swc/core": "1.16.2",
     "@testcontainers/postgresql": "12.1.0",
-    "@types/node": "22.20.1",
+    "@types/node": "22.20.2",
     "oxlint": "1.81.0",
     "pg-boss": "9.0.3",
     "prettier": "3.9.6",
