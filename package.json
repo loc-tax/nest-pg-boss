@@ -4,7 +4,7 @@
   "description": "Use pg-boss in your NestJS app",
   "author": "Julian Tölle <julian.toelle97@gmail.com> & Loctax team",
   "license": "MIT",
-  "packageManager": "pnpm@11.25.0",
+  "packageManager": "pnpm@11.26.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/loc-tax/nest-pg-boss.git"
@@ -43,12 +43,12 @@
     "@swc/core": "1.16.2",
     "@testcontainers/postgresql": "12.1.0",
     "@types/node": "22.20.1",
-    "oxlint": "1.81.0",
+    "oxlint": "1.82.0",
     "pg-boss": "9.0.3",
     "prettier": "3.9.6",
     "rxjs": "7.8.2",
     "typescript": "7.0.2",
-    "unplugin-swc": "1.5.11",
+    "unplugin-swc": "1.6.0",
     "vitest": "5.0.0"
   }
 }
