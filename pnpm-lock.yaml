@@ -49,8 +49,8 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
       unplugin-swc:
-        specifier: 1.5.11
-        version: 1.5.11(@swc/core@1.16.2)(rolldown@1.2.5)(vite@8.2.2(@types/node@22.20.1)(yaml@2.8.1))
+        specifier: 2.0.0
+        version: 2.0.0(@swc/core@1.16.2)(rolldown@1.2.5)(vite@8.2.2(@types/node@22.20.1)(yaml@2.8.1))
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(yaml@2.8.1))
@@ -1759,8 +1759,9 @@ packages:
     resolution: {integrity: sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==}
     engines: {node: '>= 0.8'}
 
-  unplugin-swc@1.5.11:
-    resolution: {integrity: sha512-R7U4GbfrESPnYLn3nXREZrwhKQk3BAmTBoKJ5lmo7btTc/yJpNsDzavBWo+XpQTjDSIogiZEAxC5ig/vfMWxWg==}
+  unplugin-swc@2.0.0:
+    resolution: {integrity: sha512-hMdGJEtkwiJhzuXXx4Nb1XYDeD9KG4+P7KZOaErJTpZNYhTo1sbWIsXb+u410zXyaqH00veNX4UxOr6TpUwNiQ==}
+    engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
       '@swc/core': ^1.2.108
 
@@ -3528,7 +3529,7 @@ snapshots:
 
   unpipe@1.0.0: {}
 
-  unplugin-swc@1.5.11(@swc/core@1.16.2)(rolldown@1.2.5)(vite@8.2.2(@types/node@22.20.1)(yaml@2.8.1)):
+  unplugin-swc@2.0.0(@swc/core@1.16.2)(rolldown@1.2.5)(vite@8.2.2(@types/node@22.20.1)(yaml@2.8.1)):
     dependencies:
       '@rollup/pluginutils': 5.4.0
       '@swc/core': 1.16.2
