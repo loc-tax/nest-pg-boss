@@ -1,7 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { MetadataScanner, ModulesContainer } from "@nestjs/core";
-import { Injectable as InjectableInterface } from "@nestjs/common/interfaces";
-import { InstanceWrapper } from "@nestjs/core/injector/instance-wrapper";
 import { PG_BOSS_JOB_METADATA } from "./pg-boss.constants";
 import { HandlerMetadata } from "./interfaces/handler-metadata.interface";
 import type { WorkHandler } from "pg-boss";
@@ -16,7 +14,7 @@ export class HandlerScannerService {
   ) {}
 
   public static exploreMethodMetadata(
-    instancePrototype: InjectableInterface,
+    instancePrototype: unknown,
     methodKey: string,
   ): HandlerMetadata | null {
     const targetCallback = (instancePrototype as any)[methodKey];
@@ -38,8 +36,9 @@ export class HandlerScannerService {
       .filter(({ providers }) => providers.size > 0)
       .map(({ providers }) => providers);
 
-    const providerInstances: InstanceWrapper<InjectableInterface>[] =
-      providersMap.flatMap((map) => Array.from(map.values()));
+    const providerInstances = providersMap.flatMap((map) =>
+      Array.from(map.values()),
+    );
 
     return providerInstances
       .flatMap(({ instance }) => {
