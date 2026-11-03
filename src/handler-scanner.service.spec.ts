@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { MetadataScanner, type ModulesContainer } from "@nestjs/core";
+import type { Job } from "pg-boss";
 import { HandlerScannerService } from "./handler-scanner.service";
 import { PG_BOSS_JOB_METADATA } from "./pg-boss.constants";
 import type { HandlerMetadata } from "./interfaces/handler-metadata.interface";
@@ -67,6 +68,41 @@ describe("HandlerScannerService.getJobHandlers", () => {
     const handlers = service.getJobHandlers();
     // oxlint-disable-next-line unicorn/no-array-sort -- map() already returned a fresh array, so sorting in place mutates nothing the caller can see.
     expect(handlers.map((h) => h.metadata.jobName).sort()).toEqual(["a", "b"]);
+  });
+
+  it("binds the callback and unwraps the job only when no batchSize is set", async () => {
+    class MixedHandler {
+      readonly received: unknown[] = [];
+      async single(job: unknown) {
+        this.received.push(job);
+      }
+      async batch(jobs: unknown) {
+        this.received.push(jobs);
+      }
+    }
+    decorate(MixedHandler.prototype, "single", {
+      token: "single",
+      jobName: "single",
+      workOptions: {},
+    });
+    decorate(MixedHandler.prototype, "batch", {
+      token: "batch",
+      jobName: "batch",
+      workOptions: { batchSize: 2 },
+    });
+
+    const instance = new MixedHandler();
+    const container = buildContainer([[{ instance }]]);
+    const service = new HandlerScannerService(new MetadataScanner(), container);
+    const handlers = service.getJobHandlers();
+    const callbackFor = (jobName: string) =>
+      handlers.find(({ metadata }) => metadata.jobName === jobName)?.callback;
+    const job = { id: "job" } as Job<unknown>;
+
+    await callbackFor("single")?.([job]);
+    await callbackFor("batch")?.([job]);
+
+    expect(instance.received).toEqual([job, [job]]);
   });
 
   it("skips providers with no instance without scanning Object.prototype", () => {

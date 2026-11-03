@@ -1,0 +1,155 @@
+import type { PgBoss } from "pg-boss";
+import { ensureQueue, readAllPages } from "./queues";
+
+const fakeBoss = (stored: Record<string, unknown> | null = null) => {
+  const calls: string[] = [];
+  const boss = {
+    createQueue: vi.fn(async (name: string) => {
+      calls.push(name);
+    }),
+    getQueue: vi.fn(async () => stored),
+    updateQueue: vi.fn(async () => {}),
+  };
+  return { boss: boss as unknown as PgBoss, mock: boss, calls };
+};
+
+describe("ensureQueue", () => {
+  it("creates a queue with no declared options without reading it back", async () => {
+    const { boss, mock } = fakeBoss();
+
+    await ensureQueue(boss, { queueName: "plain" });
+
+    expect(mock.createQueue).toHaveBeenCalledWith("plain", {});
+    expect(mock.getQueue).not.toHaveBeenCalled();
+  });
+
+  it("creates the dead letter queue first, with its own options", async () => {
+    const { boss, mock, calls } = fakeBoss();
+
+    await ensureQueue(boss, {
+      queueName: "main",
+      queueOptions: {
+        retryLimit: 1,
+        deadLetter: { queueName: "dead", queueOptions: { retryLimit: 0 } },
+      },
+    });
+
+    expect(calls).toEqual(["dead", "main"]);
+    expect(mock.createQueue).toHaveBeenCalledWith("dead", { retryLimit: 0 });
+    expect(mock.createQueue).toHaveBeenCalledWith("main", {
+      retryLimit: 1,
+      deadLetter: "dead",
+    });
+  });
+
+  it("updates only the declared options that differ", async () => {
+    const { boss, mock } = fakeBoss({
+      policy: "short",
+      retryLimit: 2,
+      retryDelay: 9,
+      deleteAfterSeconds: 60,
+    });
+
+    await ensureQueue(boss, {
+      queueName: "drifted",
+      queueOptions: {
+        policy: "short",
+        retryLimit: 5,
+        deleteAfterSeconds: 60,
+        expireInSeconds: undefined,
+      },
+    });
+
+    expect(mock.updateQueue).toHaveBeenCalledWith("drifted", { retryLimit: 5 });
+  });
+
+  it("leaves undefined options out of what pg-boss receives", async () => {
+    const { boss, mock } = fakeBoss({ retryLimit: 1 });
+
+    await ensureQueue(boss, {
+      queueName: "sparse",
+      queueOptions: { retryLimit: 1, expireInSeconds: undefined },
+    });
+
+    expect(mock.createQueue).toHaveBeenCalledWith("sparse", { retryLimit: 1 });
+  });
+
+  it("sends retryBackoff along with a changed retryDelayMax", async () => {
+    const { boss, mock } = fakeBoss({ retryBackoff: true, retryDelayMax: 30 });
+
+    await ensureQueue(boss, {
+      queueName: "backoff",
+      queueOptions: { retryBackoff: true, retryDelayMax: 60 },
+    });
+
+    expect(mock.updateQueue).toHaveBeenCalledWith("backoff", {
+      retryDelayMax: 60,
+      retryBackoff: true,
+    });
+  });
+
+  it("skips the queue but keeps schedules and subscriptions with createQueues: false", async () => {
+    const { boss, mock } = fakeBoss();
+    const extras = {
+      getSchedules: vi.fn(async () => []),
+      schedule: vi.fn(async () => {}),
+      subscribe: vi.fn(async () => {}),
+    };
+    Object.assign(boss, extras);
+
+    await ensureQueue(
+      boss,
+      {
+        queueName: "external",
+        schedules: [{ cron: "0 0 * * *", data: {} }],
+        subscribeTo: [{ eventName: "happened" }],
+      },
+      { createQueues: false },
+    );
+
+    expect(mock.createQueue).not.toHaveBeenCalled();
+    expect(extras.schedule).toHaveBeenCalled();
+    expect(extras.subscribe).toHaveBeenCalledWith("happened", "external");
+  });
+
+  it("does not update a queue that already matches", async () => {
+    const { boss, mock } = fakeBoss({ retryLimit: 5 });
+
+    await ensureQueue(boss, {
+      queueName: "same",
+      queueOptions: { retryLimit: 5 },
+    });
+
+    expect(mock.updateQueue).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["policy", { policy: "short" }, { policy: "standard" }],
+    ["partition", { partition: true }, { partition: false }],
+  ])(
+    "refuses a %s that differs from the stored queue",
+    async (option, queueOptions, stored) => {
+      const { boss, mock } = fakeBoss(stored);
+
+      await expect(
+        ensureQueue(boss, { queueName: "fixed", queueOptions }),
+      ).rejects.toThrow(`pg-boss cannot change ${option}`);
+      expect(mock.updateQueue).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("readAllPages", () => {
+  it("follows the cursor past a full page", async () => {
+    const all = Array.from({ length: 2_500 }, (_unused, index) => index);
+    const readPage = vi.fn(
+      async ({ limit, after }: { limit: number; after?: number }) =>
+        all.slice(after === undefined ? 0 : after + 1).slice(0, limit),
+    );
+
+    await expect(readAllPages(readPage, (row: number) => row)).resolves.toEqual(
+      all,
+    );
+    expect(readPage).toHaveBeenCalledTimes(3);
+  });
+});
