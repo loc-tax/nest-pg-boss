@@ -33,4 +33,10 @@ jobs:
       # --no-git-checks: the tag push checks out a detached HEAD, which pnpm's
       # default branch/clean-tree checks would otherwise reject.
       - name: Publish
-        run: pnpm publish --provenance --access public --no-git-checks
+        # A prerelease must not become npm's `latest`, which is what consumers and Renovate install.
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *-*) dist_tag=next ;;
+            *) dist_tag=latest ;;
+          esac
+          pnpm publish --provenance --access public --no-git-checks --tag "$dist_tag"
