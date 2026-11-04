@@ -18,6 +18,13 @@ const fakeBoss = (stored: Record<string, unknown> | null = null) => {
   return { boss: boss as unknown as PgBoss, mock: boss, calls };
 };
 
+const withDeadLetter = (retryLimit: number) => ({
+  queueName: "main",
+  queueOptions: {
+    deadLetter: { queueName: "dead", queueOptions: { retryLimit } },
+  },
+});
+
 const equalDeclaration = () => ({
   queueName: "once",
   queueOptions: {
@@ -95,6 +102,46 @@ describe("ensureQueueOnce", () => {
     });
 
     expect(mock.createQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets an undefined option fall back to its default", async () => {
+    const { boss, mock } = fakeBoss();
+
+    await ensureQueue(
+      boss,
+      { queueName: "defaulted", queueOptions: { retryLimit: undefined } },
+      { defaultQueueOptions: { retryLimit: 5 } },
+    );
+
+    expect(mock.createQueue).toHaveBeenCalledWith("defaulted", {
+      retryLimit: 5,
+    });
+  });
+
+  it("applies a dead letter declaration that follows a bare reference to it", async () => {
+    const { boss, mock } = fakeBoss();
+
+    await ensureQueueOnce(boss, {
+      queueName: "main",
+      queueOptions: { deadLetter: { queueName: "dead" } },
+    });
+    await ensureQueueOnce(boss, {
+      queueName: "main",
+      queueOptions: {
+        deadLetter: { queueName: "dead", queueOptions: { retryLimit: 1 } },
+      },
+    });
+
+    expect(mock.createQueue).toHaveBeenCalledWith("dead", { retryLimit: 1 });
+  });
+
+  it("throws when a matching job names a conflicting dead letter queue", async () => {
+    const { boss } = fakeBoss();
+    await ensureQueueOnce(boss, withDeadLetter(1));
+
+    await expect(ensureQueueOnce(boss, withDeadLetter(2))).rejects.toThrow(
+      /"dead" is declared twice/,
+    );
   });
 
   it("still tells leaving out schedules from an empty list", async () => {
