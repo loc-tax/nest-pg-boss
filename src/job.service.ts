@@ -484,10 +484,11 @@ export type CreateJobOptions<JobData extends object = any> = JobQueueOptions & {
    * it is removed, so `schedules: []` removes them all. Leave it out to manage
    * schedules yourself with `JobService.schedule()`.
    *
-   * Only instances with `schedule: true` remove schedules. Each applies its own
-   * list when it starts, so one still on an older release removes what a newer
-   * release added, until a newer instance restarts. See the README before adding
-   * a schedule during a rolling deploy.
+   * Instances with `schedule: false`, the default for `disableWorkers`, do not
+   * remove schedules. Any other instance applies its own list when it starts, so
+   * one still on an older release removes what a newer release added, until a
+   * newer instance restarts. See the README before adding a schedule during a
+   * rolling deploy.
    */
   schedules?: JobSchedule<JobData>[];
   /** Pub/sub events that should send this job when published. */
