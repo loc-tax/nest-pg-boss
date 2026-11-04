@@ -39,6 +39,20 @@ export const jsonifiedArraysHoldNull: Jsonified<OddValues> = {
   list: ["kept", null],
 };
 
+interface MaybeSerialized {
+  list: { toJSON(): string | undefined }[];
+}
+
+export const toJsonResultsInArraysHoldNull: Jsonified<MaybeSerialized> = {
+  list: ["kept", null],
+};
+
+export const toJsonResultsInArraysAreNeverUndefined: Jsonified<MaybeSerialized> =
+  {
+    // @ts-expect-error JSON stores an undefined `toJSON()` result in an array as null
+    list: [undefined],
+  };
+
 interface MaybeDropped {
   label: string | symbol;
   anything: any;

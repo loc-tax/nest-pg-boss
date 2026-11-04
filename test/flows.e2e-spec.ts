@@ -117,6 +117,12 @@ describe("FlowService (e2e)", () => {
       });
       // @ts-expect-error `output` is not part of the extract payload
       step(ExtractJob, { output: "wrong" });
+      const StatusJob = createJob<{ status: "pending" | "done" }>(
+        "flow-status",
+      );
+      step(StatusJob, { status: "pending" });
+      // @ts-expect-error "typo" is not a status
+      step(StatusJob, { status: "typo" });
     };
     expect(typeChecks).toBeTypeOf("function");
   });

@@ -52,6 +52,8 @@ type JsonifiedObject<Value> = {
 };
 
 /** Where an object drops a value JSON cannot hold, an array needs `null` instead. */
-type JsonifiedElement<Value> = Value extends undefined | Dropped
-  ? null
-  : Jsonified<Value>;
+type JsonifiedElement<Value> = Value extends { toJSON(): infer Serialized }
+  ? JsonifiedElement<Serialized>
+  : Value extends undefined | Dropped
+    ? null
+    : Jsonified<Value>;

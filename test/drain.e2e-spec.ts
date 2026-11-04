@@ -7,6 +7,23 @@ import { items, serviceOf, useApps, waitFor, type Item } from "./support";
 /** Long enough that a test only passes if draining, not polling, did the work. */
 const SLOW_POLL = { pollingIntervalSeconds: 60 } as const;
 
+const expectPendingUntilReleased = async (
+  stopping: Promise<void>,
+  releaseHandler: () => void,
+) => {
+  let stopped = false;
+  const tracked = (async () => {
+    await stopping;
+    stopped = true;
+  })();
+  await sleep(300);
+  expect(stopped).toBe(false);
+
+  releaseHandler();
+  await tracked;
+  expect(stopped).toBe(true);
+};
+
 describe("Handle({ drain: true }) (e2e)", () => {
   const { build, close } = useApps();
 
@@ -203,8 +220,12 @@ describe("Handle({ drain: true }) (e2e)", () => {
 
     const second = await build({ jobs: [StoppingJob], providers: [Handler] });
     await waitFor(() => second.get(Handler).finished === waiting.length);
+    // A handler returns before pg-boss records the completion.
+    await waitFor(async () => {
+      const jobs = await service.findJobs();
+      return jobs.every(({ state }) => state === "completed");
+    });
     const completed = await service.findJobs();
-    expect(completed.every(({ state }) => state === "completed")).toBe(true);
     expect(completed.every(({ retryCount }) => retryCount === 0)).toBe(true);
   });
 
@@ -278,6 +299,10 @@ describe("Handle({ drain: true }) (e2e)", () => {
     ["number", 2],
     ["tiers", { default: 1, tiers: { gold: 3 } }],
   ])("works with localGroupConcurrency as %s", async (label, limit) => {
+    // With tiers, a job pg-boss hands back can sit until the next poll, because
+    // nothing wakes a worker after that. See the README.
+    const polling =
+      typeof limit === "number" ? SLOW_POLL : { pollingIntervalSeconds: 0.5 };
     const GroupJob = createJob<Item>(`drain-local-group-${label}`, {
       retryLimit: 0,
     });
@@ -289,7 +314,7 @@ describe("Handle({ drain: true }) (e2e)", () => {
       finished = 0;
 
       @GroupJob.Handle({
-        ...SLOW_POLL,
+        ...polling,
         drain: true,
         localConcurrency: 4,
         localGroupConcurrency: limit,
@@ -337,6 +362,60 @@ describe("Handle({ drain: true }) (e2e)", () => {
     await service.offWork({ id });
 
     expect(workersOnQueue()).toHaveLength(0);
+  });
+
+  const startHeldWork = async (queueName: string) => {
+    const HeldJob = createJob<Item>(queueName, { retryLimit: 0 });
+    const app = await build({ jobs: [HeldJob] });
+    const service = serviceOf(app, HeldJob);
+
+    let releaseHandler!: () => void;
+    const held = new Promise<void>((resolve) => {
+      releaseHandler = resolve;
+    });
+    let started = false;
+    const id = await service.work(
+      { pollingIntervalSeconds: 0.5, drain: true, localConcurrency: 2 },
+      async () => {
+        started = true;
+        await held;
+      },
+    );
+    await service.send({ index: 1 });
+    await waitFor(() => started, 10_000);
+
+    return { app, service, id, releaseHandler };
+  };
+
+  describe("JobService.offWork with active handlers", () => {
+    it("waits for them by default when stopping by id", async () => {
+      const { service, id, releaseHandler } =
+        await startHeldWork("drain-wait-by-id");
+
+      await expectPendingUntilReleased(service.offWork({ id }), releaseHandler);
+    });
+
+    it("still waits after an earlier call that did not", async () => {
+      const { service, id, releaseHandler } =
+        await startHeldWork("drain-wait-again");
+
+      await service.offWork({ id, wait: false });
+
+      await expectPendingUntilReleased(service.offWork({ id }), releaseHandler);
+    });
+
+    it("forgets worker groups once a queue-wide stop has finished", async () => {
+      const { app, service, id, releaseHandler } = await startHeldWork(
+        "drain-forget-groups",
+      );
+      releaseHandler();
+      await service.offWork();
+
+      const stopSpy = vi.spyOn(app.get(PgBoss), "offWork");
+      await service.offWork({ id });
+
+      expect(stopSpy).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("also drains batch handlers, including a final partial batch", async () => {

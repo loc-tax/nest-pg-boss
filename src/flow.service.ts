@@ -21,7 +21,7 @@ export interface FlowStep<Ref extends string = string> {
 /** One job in a flow. `data` is checked against the job's payload type. */
 export function step<JobData extends object, const Ref extends string = never>(
   job: Job<JobData>,
-  data: JobData,
+  data: NoInfer<JobData>,
   config: { dependsOn?: readonly Ref[]; options?: FlowJob["options"] } = {},
 ): FlowStep<Ref> {
   return { job, data, ...config };

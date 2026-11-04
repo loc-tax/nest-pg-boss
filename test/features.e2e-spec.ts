@@ -898,6 +898,12 @@ describe("pg-boss features through this package (e2e)", () => {
       const typeChecks = () => {
         // @ts-expect-error the event's payload needs an orderId
         void pubSub.publish(OrderPlacedEvent, { wrong: true });
+        const StatusEvent = createEvent<{ status: "pending" | "done" }>(
+          "pubsub-status",
+        );
+        void pubSub.publish(StatusEvent, { status: "pending" });
+        // @ts-expect-error "typo" is not a status
+        void pubSub.publish(StatusEvent, { status: "typo" });
         createJob<{ other: number }>("pubsub-wrong", {
           // @ts-expect-error this job's data does not match the event's payload
           subscribeTo: [OrderPlacedEvent],

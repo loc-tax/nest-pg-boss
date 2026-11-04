@@ -170,7 +170,12 @@ export class JobService<JobData extends object> {
     const { id: groupId } = stopOptions;
     const group = groupId ? this.workerGroups.get(groupId) : undefined;
     if (!groupId || !group) {
-      return this.pgBoss.offWork(this.name, stopOptions);
+      await this.pgBoss.offWork(this.name, stopOptions);
+      // Without `wait`, the groups stay so a later waiting call can still find them.
+      if (!groupId && stopOptions.wait) {
+        this.workerGroups.clear();
+      }
+      return;
     }
 
     await Promise.all(

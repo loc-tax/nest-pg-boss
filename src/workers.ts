@@ -41,7 +41,8 @@ export type DefaultWorkOptions = Omit<
  *
  * `localGroupConcurrency` is the exception, because pg-boss validates it against
  * the `localConcurrency` of one registration. Those workers stay together, and a
- * success wakes them all.
+ * success wakes them all. Nothing wakes them after pg-boss hands back a job over
+ * its group's limit, so that job can wait for the next poll.
  */
 export async function registerWorkers(
   boss: PgBoss,

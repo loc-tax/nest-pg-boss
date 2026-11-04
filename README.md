@@ -250,6 +250,11 @@ back to polling at its first empty fetch.
   `batchSize`, including a final partial batch. Each of the workers counts as a
   separate pg-boss worker, for example in `getWipData()`. With `localGroupConcurrency`,
   they stay one registration, so a success wakes them all, including one that just failed.
+- With `localGroupConcurrency` tiers, a backlog can sit idle for up to one polling
+  interval. A worker can claim a job while its group is at the limit, and pg-boss then
+  hands that job back. If the other workers have already gone idle, the job waits for
+  the next poll. No job is lost and no retry is used. Set `pollingIntervalSeconds` to
+  the longest wait you can accept.
 - It removes the pause that polling put between jobs. If you relied on that as a
   rate limit, leave `drain` off, or pace the calls in your handler. Concurrency limits
   such as a `singleton` queue do not limit the rate of fast jobs.
@@ -522,6 +527,10 @@ These come from pg-boss, and this package cannot fix them:
   a time rather than in batches.
 - **Work cannot run longer than 24 hours in one job,** because that is the cap on
   `expireInSeconds`.
+- **TypeScript needs `skipLibCheck: true`.** pg-boss 12.38's declaration files refer
+  to a `ResolvedConstructorOptions` type they do not export, and to `pg` types they do
+  not depend on, so strict checking of `node_modules` fails with or without this
+  package.
 - **Migrating a pg-boss 9 schema** is not possible, as described below.
 
 #### Inspect registered handlers

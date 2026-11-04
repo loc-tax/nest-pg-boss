@@ -23,7 +23,7 @@ export class PubSubService {
 
   async publish<Payload extends object>(
     event: PgBossEvent<Payload>,
-    data: Payload,
+    data: NoInfer<Payload>,
     options?: SendOptions,
   ): Promise<void> {
     await this.boss.publish(event.eventName, data, options);
