@@ -81,6 +81,36 @@ describe("ensureQueueOnce", () => {
     expect(mock.createQueue).toHaveBeenCalledTimes(2);
   });
 
+  it("treats undefined options and an empty subscribeTo as not declared", async () => {
+    const { boss, mock } = fakeBoss();
+
+    await ensureQueueOnce(boss, {
+      queueName: "once",
+      queueOptions: { retryLimit: 1 },
+    });
+    await ensureQueueOnce(boss, {
+      queueName: "once",
+      queueOptions: { retryLimit: 1, expireInSeconds: undefined },
+      subscribeTo: [],
+    });
+
+    expect(mock.createQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("still tells leaving out schedules from an empty list", async () => {
+    const { boss } = fakeBoss();
+
+    await ensureQueueOnce(boss, { queueName: "once", queueOptions: {} });
+
+    await expect(
+      ensureQueueOnce(boss, {
+        queueName: "once",
+        queueOptions: {},
+        schedules: [],
+      }),
+    ).rejects.toThrow(/declared twice/);
+  });
+
   it("applies a full declaration after a bare reference, and not the reverse", async () => {
     const { boss, mock } = fakeBoss();
     const full = { queueName: "dead", queueOptions: { retryLimit: 1 } };

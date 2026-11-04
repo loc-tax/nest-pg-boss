@@ -120,18 +120,25 @@ const isReference = ({
   subscribeTo,
 }: QueueDeclaration) => !queueOptions && !schedules && !subscribeTo;
 
-/** What a declaration asks for. A dead letter queue counts by name, as it is checked itself. */
+/**
+ * What a declaration asks for, in the terms `ensureQueue` applies it: an undefined
+ * option is not sent, and no subscriptions is the same as an empty list. A dead
+ * letter queue counts by name, as it is checked itself. `schedules` stays as it
+ * is, because leaving it out syncs nothing while an empty list removes them all.
+ */
 const comparableParts = ({
   queueOptions = {},
   schedules,
-  subscribeTo,
+  subscribeTo = [],
 }: QueueDeclaration) => {
   const { deadLetter, ...options } = queueOptions;
   return {
-    options,
+    options: Object.fromEntries(
+      Object.entries(options).filter(([, value]) => value !== undefined),
+    ),
     deadLetter: deadLetter?.queueName,
     schedules,
-    events: subscribeTo?.map(({ eventName }) => eventName),
+    events: subscribeTo.map(({ eventName }) => eventName),
   };
 };
 
