@@ -418,6 +418,22 @@ describe("Handle({ drain: true }) (e2e)", () => {
     });
   });
 
+  it("stops a draining group by id through another JobService of the queue", async () => {
+    const SharedJob = createJob<Item>("drain-stop-shared", { retryLimit: 0 });
+    const app = await build({ jobs: [SharedJob] });
+    const boss = app.get(PgBoss);
+
+    const id = await serviceOf(app, SharedJob).work(
+      { ...SLOW_POLL, drain: true, localConcurrency: 3 },
+      async () => {},
+    );
+    await new JobService<Item>("drain-stop-shared", boss).offWork({ id });
+
+    expect(
+      boss.getWipData().filter(({ name }) => name === "drain-stop-shared"),
+    ).toHaveLength(0);
+  });
+
   it("also drains batch handlers, including a final partial batch", async () => {
     const BatchJob = createJob<Item>("drain-batch", { retryLimit: 0 });
 

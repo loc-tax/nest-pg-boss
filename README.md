@@ -308,12 +308,18 @@ key not in it is removed. So `schedules: []` removes them all, and a job with
 declared schedules should not also add some through `JobService.schedule()`. Leave
 the option out and nothing is synced, which is how to manage schedules at runtime.
 
-Instances can start at the same time, because each writes the same end state, and
-an unchanged schedule is not rewritten. During a rolling deploy, an old instance
-that restarts can briefly restore the old list, until the deploy finishes and a new
-instance starts. An instance needs `schedule: true`, the default outside
-`disableWorkers`, for jobs to actually be sent from a schedule, and at least one
-instance must have it.
+Instances can start at the same time, because each writes the same end state, and an
+unchanged schedule is not rewritten. An instance needs `schedule: true`, the default
+outside `disableWorkers`, for jobs to actually be sent from a schedule, and at least
+one instance must have it.
+
+**Every instance applies its own list at each start, including `disableWorkers`
+senders, and the last one to start wins.** During a rolling deploy, a crash restart or
+a scale-up, or with a sender and worker released separately, an instance on an older
+release removes the schedules a newer release added and reverts any it changed. The
+recurring job then does not run until an instance on the newer release restarts, and
+nothing reports this. So finish the deploy with a newer instance starting last, and
+check `getSchedules` after adding a schedule.
 
 #### The full API on `JobService`
 

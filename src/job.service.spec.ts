@@ -14,6 +14,7 @@ import {
   type JobWithMetadataOf,
 } from "./job.service";
 import type { Jsonified } from "./jsonified";
+import { markBootstrapped } from "./utils";
 import type { DefaultWorkOptions, HandleOptions } from "./workers";
 
 interface Payload {
@@ -213,6 +214,46 @@ describe("JobService", () => {
     expect(service.queueName).toBe("StartLibraryFileAnalysis");
   });
 
+  it("waits in offWork unless told otherwise, also for an undefined wait", async () => {
+    const offWork = vi.fn(async () => {});
+    const service = new JobService<Payload>("queue", {
+      offWork,
+    } as unknown as PgBoss);
+
+    await service.offWork({ wait: undefined });
+    await service.offWork({ wait: false });
+
+    expect(offWork).toHaveBeenNthCalledWith(1, "queue", { wait: true });
+    expect(offWork).toHaveBeenNthCalledWith(2, "queue", { wait: false });
+  });
+
+  it("forgets groups that stopped without waiting when the next work starts", async () => {
+    let workerCount = 0;
+    const running = new Set<string>();
+    const offWork = vi.fn(async () => {});
+    const boss = {
+      work: vi.fn(async () => {
+        const id = `worker-${++workerCount}`;
+        running.add(id);
+        return id;
+      }),
+      offWork,
+      getWipData: () => [...running].map((id) => ({ id })),
+    } as unknown as PgBoss;
+    const service = new JobService<Payload>("queue", boss);
+    const options = { drain: true, localConcurrency: 2 };
+
+    const stoppedId = await service.work(options, async () => {});
+    await service.offWork({ id: stoppedId, wait: false });
+    running.clear();
+    await service.work(options, async () => {});
+    offWork.mockClear();
+
+    await service.offWork({ id: stoppedId });
+
+    expect(offWork).toHaveBeenCalledTimes(1);
+  });
+
   it("passes the queue name first to insert", async () => {
     const insert = vi.fn(async () => null);
     const service = new JobService<Payload>("queue", {
@@ -280,6 +321,21 @@ describe("createJob", () => {
       "no permission",
     );
     expect(boss.stop).toHaveBeenCalledWith({ graceful: false });
+  });
+
+  it("leaves pg-boss running when a queue fails after bootstrap", async () => {
+    const boss = {
+      createQueue: vi.fn(async () => {
+        throw new Error("no permission");
+      }),
+      stop: vi.fn(async () => {}),
+    } as unknown as PgBoss;
+    markBootstrapped(boss);
+
+    await expect(TypedJob.ServiceProvider.useFactory(boss, {})).rejects.toThrow(
+      "no permission",
+    );
+    expect(boss.stop).not.toHaveBeenCalled();
   });
 
   it("records the queue options on the handler metadata", () => {

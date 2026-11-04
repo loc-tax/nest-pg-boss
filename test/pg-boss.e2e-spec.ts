@@ -1,10 +1,12 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   Injectable,
+  Module,
   type INestApplication,
   type OnModuleInit,
   type Provider,
 } from "@nestjs/common";
+import { LazyModuleLoader } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
 import {
   PgBoss,
@@ -577,6 +579,32 @@ describe("PGBossModule (e2e)", () => {
       } finally {
         stop.mockRestore();
       }
+    });
+
+    it("keeps pg-boss running when a lazily loaded module's queue fails", async () => {
+      const standard = createJob<Item>("queue-lazy-conflict");
+      const app = await buildApp({ jobs: [standard] });
+      const conflicting = createJob<Item>("queue-lazy-other", {
+        policy: "short",
+      });
+      const boss = app.get(PgBoss);
+      await boss.createQueue("queue-lazy-other", { policy: "standard" });
+
+      @Module({ imports: [PGBossModule.forJobs([conflicting])] })
+      class LazyJobsModule {}
+
+      const stop = vi.spyOn(PgBoss.prototype, "stop");
+      try {
+        await expect(
+          app.get(LazyModuleLoader).load(() => LazyJobsModule),
+        ).rejects.toThrow(/policy/);
+        expect(stop).not.toHaveBeenCalled();
+      } finally {
+        stop.mockRestore();
+      }
+      await expect(
+        boss.send("queue-lazy-conflict", { index: 1 }),
+      ).resolves.toEqual(expect.any(String));
     });
 
     it("stops pg-boss when a handler-only queue fails during bootstrap", async () => {

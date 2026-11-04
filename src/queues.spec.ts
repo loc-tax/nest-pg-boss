@@ -1,5 +1,10 @@
 import type { PgBoss } from "pg-boss";
-import { ensureQueue, readAllPages } from "./queues";
+import {
+  ensureQueue,
+  ensureQueueOnce,
+  forgetEnsuredQueue,
+  readAllPages,
+} from "./queues";
 
 const fakeBoss = (stored: Record<string, unknown> | null = null) => {
   const calls: string[] = [];
@@ -12,6 +17,53 @@ const fakeBoss = (stored: Record<string, unknown> | null = null) => {
   };
   return { boss: boss as unknown as PgBoss, mock: boss, calls };
 };
+
+describe("ensureQueueOnce", () => {
+  it("sets a queue up once, also when asked at the same time", async () => {
+    const { boss, mock } = fakeBoss();
+    const declaration = { queueName: "once" };
+
+    await Promise.all([
+      ensureQueueOnce(boss, declaration),
+      ensureQueueOnce(boss, declaration),
+    ]);
+    await ensureQueueOnce(boss, declaration);
+
+    expect(mock.createQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("tracks each pg-boss instance separately", async () => {
+    const first = fakeBoss();
+    const second = fakeBoss();
+
+    await ensureQueueOnce(first.boss, { queueName: "once" });
+    await ensureQueueOnce(second.boss, { queueName: "once" });
+
+    expect(second.mock.createQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("tries again after a failure", async () => {
+    const { boss, mock } = fakeBoss();
+    mock.createQueue.mockRejectedValueOnce(new Error("database gone"));
+
+    await expect(ensureQueueOnce(boss, { queueName: "once" })).rejects.toThrow(
+      "database gone",
+    );
+    await ensureQueueOnce(boss, { queueName: "once" });
+
+    expect(mock.createQueue).toHaveBeenCalledTimes(2);
+  });
+
+  it("sets a queue up again once it has been forgotten", async () => {
+    const { boss, mock } = fakeBoss();
+
+    await ensureQueueOnce(boss, { queueName: "once" });
+    forgetEnsuredQueue(boss, "once");
+    await ensureQueueOnce(boss, { queueName: "once" });
+
+    expect(mock.createQueue).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe("ensureQueue", () => {
   it("creates a queue with no declared options without reading it back", async () => {

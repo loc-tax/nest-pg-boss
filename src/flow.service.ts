@@ -9,7 +9,7 @@ import {
 import type { PGBossModuleOptions } from "./interfaces/pg-boss-options.interface";
 import type { Job } from "./job.service";
 import { MODULE_OPTIONS_TOKEN } from "./pg-boss.module-definition";
-import { ensureQueue, readAllPages } from "./queues";
+import { ensureQueueOnce, readAllPages } from "./queues";
 
 export interface FlowStep<Ref extends string = string> {
   job: Job;
@@ -34,8 +34,6 @@ export function step<JobData extends object, const Ref extends string = never>(
  */
 @Injectable()
 export class FlowService {
-  private readonly ensured = new Set<string>();
-
   constructor(
     private readonly boss: PgBoss,
     @Optional()
@@ -136,21 +134,12 @@ export class FlowService {
 
   /**
    * A flow can name jobs this module has not seen through `forJobs` or a handler.
-   * Each queue is checked once per process, since a flow may run per request.
+   * Queues it set up at startup are not checked again, since a flow may run per
+   * request.
    */
   private async ensureQueues(jobs: Job[]): Promise<void> {
-    const unseen = new Map(
-      jobs
-        .filter((job) => !this.ensured.has(job.queueName))
-        .map((job) => [job.queueName, job]),
-    );
     await Promise.all(
-      [...unseen.values()].map((job) =>
-        ensureQueue(this.boss, job, this.options),
-      ),
+      jobs.map((job) => ensureQueueOnce(this.boss, job, this.options)),
     );
-    for (const queueName of unseen.keys()) {
-      this.ensured.add(queueName);
-    }
   }
 }

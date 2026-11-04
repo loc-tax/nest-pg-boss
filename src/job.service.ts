@@ -45,12 +45,28 @@ import type { PGBossModuleOptions } from "./interfaces/pg-boss-options.interface
 import type { Jsonified } from "./jsonified";
 import { MODULE_OPTIONS_TOKEN } from "./pg-boss.module-definition";
 import { PG_BOSS_JOB_METADATA } from "./pg-boss.constants";
-import { ensureQueue, type JobQueueOptions, type JobSchedule } from "./queues";
-import { getJobToken, stopAfterFailedStartup } from "./utils";
+import {
+  ensureQueueOnce,
+  forgetEnsuredQueue,
+  type JobQueueOptions,
+  type JobSchedule,
+} from "./queues";
+import { getJobToken, hasBootstrapped, stopAfterFailedStartup } from "./utils";
 import { registerWorkers, type HandleOptions } from "./workers";
 
 /** A job to act on: its id, or the attempt `fetch()` or a handler received. */
 export type JobReference = string | string[] | JobAttempt | JobAttempt[];
+
+/** A draining `work()` is several pg-boss workers, known by the first one's id. */
+const workerGroups = new WeakMap<PgBoss, Map<string, Map<string, string[]>>>();
+
+function workerGroupsOf(boss: PgBoss, queueName: string) {
+  const queues = workerGroups.get(boss) ?? new Map();
+  workerGroups.set(boss, queues);
+  const groups: Map<string, string[]> = queues.get(queueName) ?? new Map();
+  queues.set(queueName, groups);
+  return groups;
+}
 
 /**
  * pg-boss's job and queue operations, bound to one queue and typed to the job's
@@ -59,8 +75,10 @@ export type JobReference = string | string[] | JobAttempt | JobAttempt[];
  */
 @Injectable()
 export class JobService<JobData extends object> {
-  /** A draining `work()` is several pg-boss workers, known by the first one's id. */
-  private readonly workerGroups = new Map<string, string[]>();
+  /** Shared by every `JobService` of this queue, as `forJobs()` makes one per call. */
+  private get workerGroups(): Map<string, string[]> {
+    return workerGroupsOf(this.pgBoss, this.name);
+  }
 
   constructor(
     private readonly name: string,
@@ -155,7 +173,10 @@ export class JobService<JobData extends object> {
       handler as PgBossWorkHandler<any>,
     );
     const [firstId] = workerIds as [string];
-    this.workerGroups.set(firstId, workerIds);
+    if (workerIds.length > 1) {
+      this.forgetStoppedGroups();
+      this.workerGroups.set(firstId, workerIds);
+    }
     return firstId;
   }
 
@@ -166,7 +187,7 @@ export class JobService<JobData extends object> {
    */
   async offWork(options?: OffWorkOptions): Promise<void> {
     // pg-boss only defaults `wait` when it receives no options at all.
-    const stopOptions = { wait: true, ...options };
+    const stopOptions = { ...options, wait: options?.wait ?? true };
     const { id: groupId } = stopOptions;
     const group = groupId ? this.workerGroups.get(groupId) : undefined;
     if (!groupId || !group) {
@@ -183,6 +204,16 @@ export class JobService<JobData extends object> {
     );
     if (stopOptions.wait) {
       this.workerGroups.delete(groupId);
+    }
+  }
+
+  /** Groups stopped without `wait` cannot be forgotten at the time. */
+  private forgetStoppedGroups(): void {
+    const running = new Set(this.pgBoss.getWipData().map(({ id }) => id));
+    for (const [groupId, group] of this.workerGroups) {
+      if (!group.some((id) => running.has(id))) {
+        this.workerGroups.delete(groupId);
+      }
     }
   }
 
@@ -319,7 +350,8 @@ export class JobService<JobData extends object> {
   }
 
   async deleteQueue(): Promise<void> {
-    return this.pgBoss.deleteQueue(this.name);
+    await this.pgBoss.deleteQueue(this.name);
+    forgetEnsuredQueue(this.pgBoss, this.name);
   }
 
   async deleteQueuedJobs(): Promise<number> {
@@ -451,6 +483,10 @@ export type CreateJobOptions<JobData extends object = any> = JobQueueOptions & {
    * this list owns the queue's schedules: a stored schedule whose key is not in
    * it is removed, so `schedules: []` removes them all. Leave it out to manage
    * schedules yourself with `JobService.schedule()`.
+   *
+   * Every instance applies its own list when it starts, so an instance still on
+   * an older release removes what a newer release added, until a newer instance
+   * restarts. See the README before adding a schedule during a rolling deploy.
    */
   schedules?: JobSchedule<JobData>[];
   /** Pub/sub events that should send this job when published. */
@@ -483,9 +519,13 @@ export const createJob = <JobData extends object>(
       // and `onModuleInit` hooks, and on instances running with `disableWorkers`.
       useFactory: async (pgBoss: PgBoss, options?: PGBossModuleOptions) => {
         try {
-          await ensureQueue(pgBoss, declaration, options);
+          await ensureQueueOnce(pgBoss, declaration, options);
         } catch (error) {
-          await stopAfterFailedStartup(pgBoss);
+          // A module loaded lazily into a running app must not take pg-boss down
+          // with it, because the rest of the app is still using that instance.
+          if (!hasBootstrapped(pgBoss)) {
+            await stopAfterFailedStartup(pgBoss);
+          }
           throw error;
         }
         return new JobService<JobData>(name, pgBoss);

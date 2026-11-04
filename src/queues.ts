@@ -100,6 +100,45 @@ export async function ensureQueue(
   }
 }
 
+/** The queues each pg-boss instance has set up, or is setting up right now. */
+const ensuredQueues = new WeakMap<PgBoss, Map<string, Promise<void>>>();
+
+/**
+ * `ensureQueue`, once per queue per pg-boss instance. Every `forJobs()` call makes
+ * its own module, and a flow can run per request, so the same queue is declared
+ * many times. A failed attempt is not remembered, so the next one tries again.
+ */
+export function ensureQueueOnce(
+  boss: PgBoss,
+  declaration: QueueDeclaration,
+  setup?: QueueSetupOptions,
+): Promise<void> {
+  const queues = ensuredQueues.get(boss) ?? new Map<string, Promise<void>>();
+  ensuredQueues.set(boss, queues);
+
+  const { queueName } = declaration;
+  const ensured = queues.get(queueName);
+  if (ensured) {
+    return ensured;
+  }
+
+  const ensuring = (async () => {
+    try {
+      await ensureQueue(boss, declaration, setup);
+    } catch (error) {
+      queues.delete(queueName);
+      throw error;
+    }
+  })();
+  queues.set(queueName, ensuring);
+  return ensuring;
+}
+
+/** After a queue is deleted, the next declaration of it has to create it again. */
+export function forgetEnsuredQueue(boss: PgBoss, queueName: string): void {
+  ensuredQueues.get(boss)?.delete(queueName);
+}
+
 /**
  * Reads every page of a pg-boss list. Its `limit` caps one page, and the last row
  * of a page is the `after` that continues the list.

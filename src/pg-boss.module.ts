@@ -15,6 +15,7 @@ import {
   applyDisableWorkersDefaults,
   assertValidModuleOptions,
   handleRetry,
+  markBootstrapped,
   stopAfterFailedStartup,
 } from "./utils";
 import { PGBossJobModule } from "./pg-boss-job.module";
@@ -24,7 +25,7 @@ import type { Job } from "./job.service";
 import type { PgBossLifecycleEvent } from "./on-pg-boss-event.decorator";
 import { FlowService } from "./flow.service";
 import { PubSubService } from "./events";
-import { ensureQueue } from "./queues";
+import { ensureQueueOnce } from "./queues";
 import { registerWorkers } from "./workers";
 import {
   ConfigurableModuleClass,
@@ -164,6 +165,9 @@ export class PGBossModule
       this.attachEventListeners();
       await this.createHandlerQueues();
       await this.setupWorkers();
+      if (this.instance) {
+        markBootstrapped(this.instance);
+      }
     } catch (error) {
       if (this.instance) {
         await stopAfterFailedStartup(this.instance);
@@ -210,7 +214,7 @@ export class PGBossModule
 
     await Promise.all(
       [...declarations.values()].map((declaration) =>
-        ensureQueue(boss, declaration, this.options),
+        ensureQueueOnce(boss, declaration, this.options),
       ),
     );
   }

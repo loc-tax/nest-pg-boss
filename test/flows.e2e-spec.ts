@@ -127,6 +127,18 @@ describe("FlowService (e2e)", () => {
     expect(typeChecks).toBeTypeOf("function");
   });
 
+  it("does not set up queues again that the module set up at startup", async () => {
+    const { flows, boss } = await start();
+    const createQueue = vi.spyOn(boss, "createQueue");
+
+    await flows.run({
+      one: step(ExtractJob, { file: "x" }),
+      two: step(LoadJob, { output: "y" }, { dependsOn: ["one"] }),
+    });
+
+    expect(createQueue).not.toHaveBeenCalled();
+  });
+
   it("creates queues for jobs the module has not seen", async () => {
     const { flows, boss } = await start();
     const UnseenJob = createJob<{ tag: string }>("flow-unseen", {
