@@ -50,6 +50,8 @@ export interface QueueDeclaration {
 /** The parts of the module options that decide how a queue is set up. */
 export type QueueSetupOptions = {
   createQueues?: boolean;
+  disableWorkers?: boolean;
+  schedule?: boolean;
   defaultQueueOptions?: DefaultQueueOptions;
 };
 
@@ -92,7 +94,10 @@ export async function ensureQueue(
   }
 
   if (schedules) {
-    await syncSchedules(boss, queueName, schedules);
+    // An instance that does not run schedules, such as a sender on its own release
+    // cycle, can add and update them but leaves removing to those that do.
+    const { schedule = !setup.disableWorkers } = setup;
+    await syncSchedules(boss, queueName, schedules, schedule);
   }
   for (const { eventName } of subscribeTo ?? []) {
     // oxlint-disable-next-line no-await-in-loop -- a job subscribes to few events, and order keeps errors readable.
@@ -217,13 +222,15 @@ const asJson = (value: unknown): unknown =>
 
 /**
  * Makes the stored schedules of a queue match its declaration: adds and updates
- * what differs and removes keys no longer declared. Instances can do this at the
- * same time, because each step is an idempotent write of the same end state.
+ * what differs and, when asked, removes keys no longer declared. Instances can do
+ * this at the same time, because each step is an idempotent write of the same end
+ * state.
  */
 async function syncSchedules(
   boss: PgBoss,
   queueName: string,
   schedules: JobSchedule[],
+  removeUndeclared: boolean,
 ): Promise<void> {
   const keys = schedules.map(({ options }) => options?.key ?? "");
   const duplicate = keys.find((key, index) => keys.indexOf(key) !== index);
@@ -255,7 +262,7 @@ async function syncSchedules(
   }
 
   for (const { key } of stored) {
-    if (!keys.includes(key)) {
+    if (removeUndeclared && !keys.includes(key)) {
       // oxlint-disable-next-line no-await-in-loop -- see above.
       await boss.unschedule(queueName, key);
       logger.log(

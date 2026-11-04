@@ -313,13 +313,17 @@ unchanged schedule is not rewritten. An instance needs `schedule: true`, the def
 outside `disableWorkers`, for jobs to actually be sent from a schedule, and at least
 one instance must have it.
 
-**Every instance applies its own list at each start, including `disableWorkers`
-senders, and the last one to start wins.** During a rolling deploy, a crash restart or
-a scale-up, or with a sender and worker released separately, an instance on an older
-release removes the schedules a newer release added and reverts any it changed. The
-recurring job then does not run until an instance on the newer release restarts, and
-nothing reports this. So finish the deploy with a newer instance starting last, and
-check `getSchedules` after adding a schedule.
+Only instances with `schedule: true` remove schedules. `disableWorkers` senders add and
+update them but never remove any, so a sender released separately cannot delete a
+schedule a newer worker added. It follows that a stale schedule goes away when an
+instance that runs schedules starts.
+
+**Every instance applies its own list at each start, and the last one to start wins.**
+During a rolling deploy, a crash restart or a scale-up, a worker on an older release
+removes the schedules a newer release added, and any instance on an older release
+reverts the ones it changed. The recurring job then does not run until an instance on
+the newer release restarts, and nothing reports this. So finish the deploy with a newer
+instance starting last, and check `getSchedules` after adding a schedule.
 
 #### The full API on `JobService`
 

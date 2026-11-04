@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { Injectable } from "@nestjs/common";
+import { Injectable, type INestApplication } from "@nestjs/common";
 import {
   PgBoss,
   type Job as PgBossJob,
@@ -15,6 +15,11 @@ import {
   PubSubService,
 } from "../src";
 import { items, POLL, serviceOf, useApps, waitFor, type Item } from "./support";
+
+const storedSchedulesOn = async (app: INestApplication) =>
+  (await app.get(PgBoss).getSchedules("schedules-sender")).map(
+    ({ key, cron }) => [key, cron],
+  );
 
 const withSchedules = (
   schedules: {
@@ -680,6 +685,39 @@ describe("pg-boss features through this package (e2e)", () => {
   });
 
   describe("declared schedules", () => {
+    it("only removes schedules on instances that run them", async () => {
+      const newer = createJob<Item>("schedules-sender", {
+        schedules: [
+          { cron: "0 0 * * *", data: { index: 1 }, options: { key: "old" } },
+          { cron: "0 1 * * *", data: { index: 2 }, options: { key: "new" } },
+        ],
+      });
+      const older = createJob<Item>("schedules-sender", {
+        schedules: [
+          { cron: "0 2 * * *", data: { index: 1 }, options: { key: "old" } },
+        ],
+      });
+      await close(await build({ jobs: [newer] }));
+
+      const sender = await build({
+        jobs: [older],
+        options: { disableWorkers: true },
+      });
+      await expect(storedSchedulesOn(sender)).resolves.toEqual([
+        ["new", "0 1 * * *"],
+        ["old", "0 2 * * *"],
+      ]);
+      await close(sender);
+
+      const scheduler = await build({
+        jobs: [older],
+        options: { disableWorkers: true, schedule: true },
+      });
+      await expect(storedSchedulesOn(scheduler)).resolves.toEqual([
+        ["old", "0 2 * * *"],
+      ]);
+    });
+
     it("adds, updates and removes to match the declaration", async () => {
       const first = await build({
         jobs: [
