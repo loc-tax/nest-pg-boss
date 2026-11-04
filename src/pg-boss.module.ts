@@ -200,21 +200,18 @@ export class PGBossModule
     }
 
     const boss = this.instance;
-    const declarations = new Map(
-      this.handlerScannerService.getJobHandlers().map(({ metadata }) => [
-        metadata.jobName,
-        {
-          queueName: metadata.jobName,
-          queueOptions: metadata.queueOptions,
-          schedules: metadata.schedules,
-          subscribeTo: metadata.subscribeTo,
-        },
-      ]),
-    );
-
     await Promise.all(
-      [...declarations.values()].map((declaration) =>
-        ensureQueueOnce(boss, declaration, this.options),
+      this.handlerScannerService.getJobHandlers().map(({ metadata }) =>
+        ensureQueueOnce(
+          boss,
+          {
+            queueName: metadata.jobName,
+            queueOptions: metadata.queueOptions,
+            schedules: metadata.schedules,
+            subscribeTo: metadata.subscribeTo,
+          },
+          this.options,
+        ),
       ),
     );
   }

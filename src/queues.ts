@@ -76,7 +76,7 @@ export async function ensureQueue(
 ): Promise<void> {
   const { deadLetter, ...options } = queueOptions;
   if (deadLetter) {
-    await ensureQueue(boss, deadLetter, setup);
+    await ensureQueueOnce(boss, deadLetter, setup);
   }
 
   if (setup.createQueues !== false) {
@@ -105,38 +105,85 @@ export async function ensureQueue(
   }
 }
 
+interface EnsuredQueue {
+  declaration: QueueDeclaration;
+  ensuring: Promise<void>;
+}
+
 /** The queues each pg-boss instance has set up, or is setting up right now. */
-const ensuredQueues = new WeakMap<PgBoss, Map<string, Promise<void>>>();
+const ensuredQueues = new WeakMap<PgBoss, Map<string, EnsuredQueue>>();
+
+/** Only names the queue, as a bare `deadLetter: { queueName }` does. */
+const isReference = ({
+  queueOptions,
+  schedules,
+  subscribeTo,
+}: QueueDeclaration) => !queueOptions && !schedules && !subscribeTo;
+
+/** What a declaration asks for. A dead letter queue counts by name, as it is checked itself. */
+const comparableParts = ({
+  queueOptions = {},
+  schedules,
+  subscribeTo,
+}: QueueDeclaration) => {
+  const { deadLetter, ...options } = queueOptions;
+  return {
+    options,
+    deadLetter: deadLetter?.queueName,
+    schedules,
+    events: subscribeTo?.map(({ eventName }) => eventName),
+  };
+};
+
+const declaresTheSame = (first: QueueDeclaration, second: QueueDeclaration) =>
+  (first.queueOptions === second.queueOptions &&
+    first.schedules === second.schedules &&
+    first.subscribeTo === second.subscribeTo) ||
+  isDeepStrictEqual(comparableParts(first), comparableParts(second));
 
 /**
  * `ensureQueue`, once per queue per pg-boss instance. Every `forJobs()` call makes
  * its own module, and a flow can run per request, so the same queue is declared
  * many times. A failed attempt is not remembered, so the next one tries again.
+ *
+ * Two different declarations of one queue are a mistake that would otherwise
+ * depend on startup order, so the second one throws.
  */
-export function ensureQueueOnce(
+export async function ensureQueueOnce(
   boss: PgBoss,
   declaration: QueueDeclaration,
   setup?: QueueSetupOptions,
 ): Promise<void> {
-  const queues = ensuredQueues.get(boss) ?? new Map<string, Promise<void>>();
+  const queues = ensuredQueues.get(boss) ?? new Map<string, EnsuredQueue>();
   ensuredQueues.set(boss, queues);
 
   const { queueName } = declaration;
   const ensured = queues.get(queueName);
-  if (ensured) {
-    return ensured;
+  if (ensured && isReference(declaration)) {
+    return await ensured.ensuring;
+  }
+  // A reference asks for nothing, so a full declaration still has to be applied.
+  if (ensured && !isReference(ensured.declaration)) {
+    if (!declaresTheSame(ensured.declaration, declaration)) {
+      throw new Error(
+        `Queue "${queueName}" is declared twice with different options, schedules or ` +
+          `subscriptions. Share one createJob, or give each its own queue name.`,
+      );
+    }
+    return await ensured.ensuring;
   }
 
-  const ensuring = (async () => {
-    try {
-      await ensureQueue(boss, declaration, setup);
-    } catch (error) {
+  const ensuring = ensureQueue(boss, declaration, setup);
+  const entry: EnsuredQueue = { declaration, ensuring };
+  queues.set(queueName, entry);
+  try {
+    await ensuring;
+  } catch (error) {
+    if (queues.get(queueName) === entry) {
       queues.delete(queueName);
-      throw error;
     }
-  })();
-  queues.set(queueName, ensuring);
-  return ensuring;
+    throw error;
+  }
 }
 
 /** After a queue is deleted, the next declaration of it has to create it again. */
@@ -262,12 +309,21 @@ async function syncSchedules(
   }
 
   for (const { key } of stored) {
-    if (removeUndeclared && !keys.includes(key)) {
-      // oxlint-disable-next-line no-await-in-loop -- see above.
-      await boss.unschedule(queueName, key);
-      logger.log(
-        `Removed schedule "${key}" from queue "${queueName}", no longer declared`,
-      );
+    if (keys.includes(key)) {
+      continue;
     }
+    if (!removeUndeclared) {
+      logger.warn(
+        `Queue "${queueName}" has a stored schedule "${key}" this job does not declare. ` +
+          `This instance has schedule: false, so it leaves removing that to one with ` +
+          `schedule: true, which must also declare this job.`,
+      );
+      continue;
+    }
+    // oxlint-disable-next-line no-await-in-loop -- see above.
+    await boss.unschedule(queueName, key);
+    logger.log(
+      `Removed schedule "${key}" from queue "${queueName}", no longer declared`,
+    );
   }
 }

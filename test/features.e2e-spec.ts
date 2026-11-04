@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { Injectable, type INestApplication } from "@nestjs/common";
+import { Injectable, Logger, type INestApplication } from "@nestjs/common";
 import {
   PgBoss,
   type Job as PgBossJob,
@@ -699,6 +699,7 @@ describe("pg-boss features through this package (e2e)", () => {
       });
       await close(await build({ jobs: [newer] }));
 
+      const warn = vi.spyOn(Logger.prototype, "warn");
       const sender = await build({
         jobs: [older],
         options: { disableWorkers: true },
@@ -707,6 +708,8 @@ describe("pg-boss features through this package (e2e)", () => {
         ["new", "0 1 * * *"],
         ["old", "0 2 * * *"],
       ]);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('"new"'));
+      warn.mockRestore();
       await close(sender);
 
       const scheduler = await build({

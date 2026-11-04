@@ -147,10 +147,6 @@ export function assertNoRemovedOptions(
   }
 }
 
-/**
- * Nest runs no destroy hooks when startup fails, so a pg-boss instance that has
- * already started would keep its pool and timers open.
- */
 const bootstrappedInstances = new WeakSet<PgBoss>();
 
 /** Called by the module once an instance's app has finished starting. */
@@ -162,6 +158,10 @@ export function hasBootstrapped(boss: PgBoss): boolean {
   return bootstrappedInstances.has(boss);
 }
 
+/**
+ * Nest runs no destroy hooks when startup fails, so a pg-boss instance that has
+ * already started would keep its pool and timers open.
+ */
 export async function stopAfterFailedStartup(boss: PgBoss): Promise<void> {
   try {
     await boss.stop({ graceful: false });

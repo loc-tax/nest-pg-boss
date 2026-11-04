@@ -1,13 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import {
-  Injectable,
-  Module,
-  type INestApplication,
-  type OnModuleInit,
-  type Provider,
-} from "@nestjs/common";
+import { Injectable, Module, type OnModuleInit } from "@nestjs/common";
 import { LazyModuleLoader } from "@nestjs/core";
-import { Test } from "@nestjs/testing";
 import {
   PgBoss,
   type Db,
@@ -17,17 +10,12 @@ import {
   type Warning,
 } from "pg-boss";
 import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import {
   HandlerScannerService,
   PGBossModule,
   createJob,
-  type Job,
   type JobService,
 } from "../src";
-import type { PGBossModuleOptions } from "../src/interfaces/pg-boss-options.interface";
+import { items, POLL, serviceOf, useApps, waitFor, type Item } from "./support";
 
 interface FoobarJobData {
   foo: string;
@@ -55,85 +43,11 @@ class FoobarService {
   }
 }
 
-interface Item {
-  index: number;
-}
-
-const items = (count: number) =>
-  Array.from({ length: count }, (_unused, index) => ({ data: { index } }));
-
-const POLL = { pollingIntervalSeconds: 0.5 } as const;
-
-const serviceOf = <JobData extends object>(
-  app: INestApplication,
-  job: Job<JobData>,
-) => app.get<JobService<JobData>>(job.ServiceProvider.provide as string);
-
-const waitFor = async (condition: () => boolean | Promise<boolean>) => {
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    // oxlint-disable-next-line no-await-in-loop -- sequential poll; running the checks in parallel would defeat the wait.
-    if (await condition()) {
-      return;
-    }
-    // oxlint-disable-next-line no-await-in-loop -- see above.
-    await sleep(100);
-  }
-  throw new Error("Timed out waiting for the condition");
-};
-
 const jobStates = async (boss: PgBoss, queue: string) =>
   (await boss.findJobs(queue)).map(({ state }) => state);
 
 describe("PGBossModule (e2e)", () => {
-  let postgres: StartedPostgreSqlContainer;
-  const openApps: INestApplication[] = [];
-
-  beforeAll(async () => {
-    postgres = await new PostgreSqlContainer("postgres:16-alpine").start();
-  });
-
-  afterEach(async () => {
-    await Promise.all(openApps.splice(0).map((app) => app.close()));
-  });
-
-  afterAll(async () => {
-    await postgres?.stop();
-  });
-
-  const buildApp = async ({
-    jobs = [],
-    providers = [],
-    options = {},
-  }: {
-    jobs?: Job[];
-    providers?: Provider[];
-    options?: Partial<PGBossModuleOptions>;
-  }): Promise<INestApplication> => {
-    const moduleFixture = await Test.createTestingModule({
-      imports: [
-        PGBossModule.forRoot({
-          host: postgres.getHost(),
-          port: postgres.getPort(),
-          database: postgres.getDatabase(),
-          user: postgres.getUsername(),
-          password: postgres.getPassword(),
-          onError: (error) => {
-            console.error(error);
-          },
-          retryAttempts: 1,
-          ...options,
-        }),
-        PGBossModule.forJobs(jobs),
-      ],
-      providers,
-    }).compile();
-
-    const app = moduleFixture.createNestApplication();
-    await app.init();
-    openApps.push(app);
-    return app;
-  };
+  const { build: buildApp, close } = useApps();
 
   describe("with workers enabled", () => {
     it("creates the queue and handles a job", async () => {
@@ -519,8 +433,7 @@ describe("PGBossModule (e2e)", () => {
         retryDelay: 5,
       });
       const firstApp = await buildApp({ jobs: [first] });
-      await firstApp.close();
-      openApps.splice(openApps.indexOf(firstApp), 1);
+      await close(firstApp);
 
       const second = createJob<Item>("queue-reconcile", { retryLimit: 6 });
       const app = await buildApp({ jobs: [second] });
@@ -537,8 +450,7 @@ describe("PGBossModule (e2e)", () => {
         expireInSeconds: undefined,
       });
       const firstApp = await buildApp({ jobs: [first] });
-      await firstApp.close();
-      openApps.splice(openApps.indexOf(firstApp), 1);
+      await close(firstApp);
 
       const second = createJob<Item>("queue-backoff", {
         retryBackoff: true,
@@ -559,8 +471,7 @@ describe("PGBossModule (e2e)", () => {
     it("fails startup and stops pg-boss when the declared policy differs from the existing queue", async () => {
       const standard = createJob<Item>("queue-policy-conflict");
       const firstApp = await buildApp({ jobs: [standard] });
-      await firstApp.close();
-      openApps.splice(openApps.indexOf(firstApp), 1);
+      await close(firstApp);
 
       const short = createJob<Item>("queue-policy-conflict", {
         policy: "short",
@@ -579,6 +490,24 @@ describe("PGBossModule (e2e)", () => {
       } finally {
         stop.mockRestore();
       }
+    });
+
+    it("fails startup when two jobs declare one queue differently", async () => {
+      const first = createJob<Item>("queue-declared-twice", { retryLimit: 1 });
+      const second = createJob<Item>("queue-declared-twice", { retryLimit: 2 });
+
+      @Injectable()
+      class TwoDeclarations {
+        @first.Handle(POLL)
+        async handleFirst(_job: PgBossJob<Item>) {}
+
+        @second.Handle(POLL)
+        async handleSecond(_job: PgBossJob<Item>) {}
+      }
+
+      await expect(buildApp({ providers: [TwoDeclarations] })).rejects.toThrow(
+        /declared twice/,
+      );
     });
 
     it("keeps pg-boss running when a lazily loaded module's queue fails", async () => {
@@ -610,8 +539,7 @@ describe("PGBossModule (e2e)", () => {
     it("stops pg-boss when a handler-only queue fails during bootstrap", async () => {
       const standard = createJob<Item>("queue-handler-conflict");
       const firstApp = await buildApp({ jobs: [standard] });
-      await firstApp.close();
-      openApps.splice(openApps.indexOf(firstApp), 1);
+      await close(firstApp);
 
       const short = createJob<Item>("queue-handler-conflict", {
         policy: "short",

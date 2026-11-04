@@ -18,6 +18,14 @@ const fakeBoss = (stored: Record<string, unknown> | null = null) => {
   return { boss: boss as unknown as PgBoss, mock: boss, calls };
 };
 
+const equalDeclaration = () => ({
+  queueName: "once",
+  queueOptions: {
+    retryLimit: 1,
+    deadLetter: { queueName: "dead", queueOptions: {} },
+  },
+});
+
 describe("ensureQueueOnce", () => {
   it("sets a queue up once, also when asked at the same time", async () => {
     const { boss, mock } = fakeBoss();
@@ -40,6 +48,76 @@ describe("ensureQueueOnce", () => {
     await ensureQueueOnce(second.boss, { queueName: "once" });
 
     expect(second.mock.createQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws on a different declaration of the same queue", async () => {
+    const { boss, mock } = fakeBoss();
+    await ensureQueueOnce(boss, {
+      queueName: "once",
+      queueOptions: { retryLimit: 1 },
+    });
+
+    await expect(
+      ensureQueueOnce(boss, {
+        queueName: "once",
+        queueOptions: { retryLimit: 2 },
+      }),
+    ).rejects.toThrow(/declared twice/);
+    await expect(
+      ensureQueueOnce(boss, {
+        queueName: "once",
+        queueOptions: { retryLimit: 1 },
+        subscribeTo: [{ eventName: "changed" }],
+      }),
+    ).rejects.toThrow(/declared twice/);
+    expect(mock.createQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts an equal declaration made separately", async () => {
+    const { boss, mock } = fakeBoss();
+    await ensureQueueOnce(boss, equalDeclaration());
+    await ensureQueueOnce(boss, equalDeclaration());
+
+    expect(mock.createQueue).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies a full declaration after a bare reference, and not the reverse", async () => {
+    const { boss, mock } = fakeBoss();
+    const full = { queueName: "dead", queueOptions: { retryLimit: 1 } };
+
+    await ensureQueueOnce(boss, { queueName: "dead" });
+    await ensureQueueOnce(boss, full);
+    await ensureQueueOnce(boss, { queueName: "dead" });
+
+    expect(mock.createQueue).toHaveBeenCalledTimes(2);
+    expect(mock.createQueue).toHaveBeenLastCalledWith("dead", {
+      retryLimit: 1,
+    });
+  });
+
+  it("sets up a dead letter queue once when it is also a job", async () => {
+    const { boss, mock, calls } = fakeBoss();
+    const dead = { queueName: "dead", queueOptions: {} };
+
+    await ensureQueueOnce(boss, dead);
+    await ensureQueueOnce(boss, {
+      queueName: "main",
+      queueOptions: { deadLetter: dead },
+    });
+
+    expect(calls).toEqual(["dead", "main"]);
+    expect(mock.createQueue).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not hang on a queue that is its own dead letter queue", async () => {
+    const { boss } = fakeBoss();
+
+    await expect(
+      ensureQueueOnce(boss, {
+        queueName: "self",
+        queueOptions: { deadLetter: { queueName: "self" } },
+      }),
+    ).resolves.toBeUndefined();
   });
 
   it("tries again after a failure", async () => {
