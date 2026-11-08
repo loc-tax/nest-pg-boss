@@ -55,6 +55,11 @@ export type QueueSetupOptions = {
   defaultQueueOptions?: DefaultQueueOptions;
 };
 
+const withoutUndefined = (values: object): Record<string, unknown> =>
+  Object.fromEntries(
+    Object.entries(values).filter(([, value]) => value !== undefined),
+  );
+
 /** pg-boss cannot change these once a queue exists. */
 const IMMUTABLE_OPTIONS = ["policy", "partition"] as const;
 
@@ -80,14 +85,13 @@ export async function ensureQueue(
   }
 
   if (setup.createQueues !== false) {
-    // pg-boss's validators reject a key that is present but undefined.
-    const declared = Object.fromEntries(
-      Object.entries({
-        ...setup.defaultQueueOptions,
-        ...options,
-        ...(deadLetter && { deadLetter: deadLetter.queueName }),
-      }).filter(([, value]) => value !== undefined),
-    ) as Omit<Queue, "name">;
+    // Undefined means not declared, so it must not hide a default. pg-boss's
+    // validators also reject a key that is present but undefined.
+    const declared = withoutUndefined({
+      ...withoutUndefined(setup.defaultQueueOptions ?? {}),
+      ...withoutUndefined(options),
+      ...(deadLetter && { deadLetter: deadLetter.queueName }),
+    }) as Omit<Queue, "name">;
 
     await boss.createQueue(queueName, declared);
     await applyDeclaredOptions(boss, queueName, declared);
@@ -120,18 +124,23 @@ const isReference = ({
   subscribeTo,
 }: QueueDeclaration) => !queueOptions && !schedules && !subscribeTo;
 
-/** What a declaration asks for. A dead letter queue counts by name, as it is checked itself. */
+/**
+ * What a declaration asks for, in the terms `ensureQueue` applies it: an undefined
+ * option is not sent, and no subscriptions is the same as an empty list. A dead
+ * letter queue counts by name, as it is checked itself. `schedules` stays as it
+ * is, because leaving it out syncs nothing while an empty list removes them all.
+ */
 const comparableParts = ({
   queueOptions = {},
   schedules,
-  subscribeTo,
+  subscribeTo = [],
 }: QueueDeclaration) => {
   const { deadLetter, ...options } = queueOptions;
   return {
-    options,
+    options: withoutUndefined(options),
     deadLetter: deadLetter?.queueName,
     schedules,
-    events: subscribeTo?.map(({ eventName }) => eventName),
+    events: subscribeTo.map(({ eventName }) => eventName),
   };
 };
 
@@ -170,7 +179,14 @@ export async function ensureQueueOnce(
           `subscriptions. Share one createJob, or give each its own queue name.`,
       );
     }
-    return await ensured.ensuring;
+    await ensured.ensuring;
+    // A match only compares the dead letter queue by name, and this declaration of
+    // it may say more than the one already applied.
+    const { deadLetter } = declaration.queueOptions ?? {};
+    if (deadLetter) {
+      await ensureQueueOnce(boss, deadLetter, setup);
+    }
+    return;
   }
 
   const ensuring = ensureQueue(boss, declaration, setup);
