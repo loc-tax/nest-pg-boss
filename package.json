@@ -58,7 +58,7 @@
     "@opentelemetry/api": "1.10.0",
     "@opentelemetry/sdk-trace-node": "2.12.0",
     "@swc/core": "1.16.22",
-    "@testcontainers/postgresql": "12.2.1",
+    "@testcontainers/postgresql": "12.2.2",
     "@types/node": "22.20.5",
     "oxlint": "1.94.0",
     "pg-boss": "12.38.2",
