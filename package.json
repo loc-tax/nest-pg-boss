@@ -61,7 +61,7 @@
     "@testcontainers/postgresql": "12.2.2",
     "@types/node": "22.20.5",
     "oxlint": "1.94.0",
-    "pg-boss": "12.38.2",
+    "pg-boss": "12.39.0",
     "prettier": "3.10.1",
     "rxjs": "7.8.2",
     "typescript": "7.0.2",
