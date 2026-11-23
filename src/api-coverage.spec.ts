@@ -34,6 +34,7 @@ const METHODS = {
   deleteQueue: "JobService",
   deleteQueuedJobs: "JobService",
   deleteStoredJobs: "JobService",
+  drain: "JobService",
   fail: "JobService",
   fetch: "JobService",
   findJobs: "JobService",
@@ -67,6 +68,7 @@ const METHODS = {
   // On their own services
   flow: "FlowService",
   resolveFlow: "FlowService",
+  getSubscriptions: "PubSubService",
   publish: "PubSubService",
   subscribe: "PubSubService",
   unsubscribe: "PubSubService",
@@ -119,6 +121,7 @@ const FLOW_NAMES = {
 } as const satisfies Record<MethodsIn<"FlowService">, keyof FlowService>;
 
 const PUB_SUB_NAMES = {
+  getSubscriptions: "getSubscriptions",
   publish: "publish",
   subscribe: "subscribe",
   unsubscribe: "unsubscribe",

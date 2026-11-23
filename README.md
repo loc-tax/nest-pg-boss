@@ -17,10 +17,10 @@
 npm install @loctax/nest-pg-boss pg-boss
 ```
 
-Requires Node.js 22.12 or later, NestJS 11 or 12, and pg-boss 12. pg-boss also
-needs its peer dependency `@opentelemetry/api`. npm and pnpm install it for you
-by default. With a package manager that does not auto-install peers, add it
-yourself, or loading pg-boss fails.
+Requires Node.js 22.12 or later, NestJS 11 or 12, and pg-boss 12.39 or later.
+pg-boss also needs its peer dependency `@opentelemetry/api`. npm and pnpm install
+it for you by default. With a package manager that does not auto-install peers,
+add it yourself, or loading pg-boss fails.
 
 pg-boss is ESM-only. This package is CommonJS and loads it through Node's
 `require(esm)`, so both CommonJS and ESM applications work. In TypeScript, use
@@ -262,6 +262,33 @@ back to polling at its first empty fetch.
 For handlers that can accept an array, `batchSize` with `burstWhenBatchFull` is
 faster still, but a batch is claimed, expires and settles together.
 
+#### Work the queues and exit
+
+`drain()` runs the registered workers back to back until none finds a ready job, then
+resolves with how many jobs they handled. That fits a cron job, a serverless function
+or a test:
+
+```typescript
+import { NestFactory } from "@nestjs/core";
+import { PgBoss } from "@loctax/nest-pg-boss";
+
+const app = await NestFactory.createApplicationContext(WorkerModule);
+const { processed, failed, timedOut } = await app
+  .get(PgBoss)
+  .drain({ timeoutSeconds: 540 });
+await app.close();
+```
+
+`JobService.drain()` does the same for one queue. Jobs waiting on `startAfter` or a
+retry delay are not ready, so `drain()` does not wait for them. At `timeoutSeconds` it
+resolves without waiting for jobs still running, and closing the app stops pg-boss,
+which waits for them as usual. An instance with `disableWorkers` has no workers to run,
+so `drain()` resolves at once.
+
+`Handle({ drain: true })` changes how a worker polls for as long as the app runs.
+`drain()` is one call that resolves once nothing is ready, and the workers go back to
+polling afterwards.
+
 #### Module-wide defaults
 
 ```typescript
@@ -303,6 +330,10 @@ const ReportJob = createJob<ReportData>("report", {
 });
 ```
 
+A cron expression with a seconds field, such as `*/5 * * * * *`, sends at most one job
+a minute unless its options have `precision: "second"`. With it, every occurrence sends
+its own job.
+
 When `schedules` is present, that list owns the queue's schedules, and any stored
 key not in it is removed. So `schedules: []` removes them all, and a job with
 declared schedules should not also add some through `JobService.schedule()`. Leave
@@ -339,7 +370,7 @@ to the job's data:
 | Purpose  | Methods                                                                                                                                           |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Create   | `send`, `sendAfter`, `sendThrottled`, `sendDebounced`, `insert`, `update`, `upsert`                                                               |
-| Work     | `work`, `offWork`, `fetch`, `complete`, `fail`, `touch`                                                                                           |
+| Work     | `work`, `offWork`, `drain`, `fetch`, `complete`, `fail`, `touch`                                                                                  |
 | Manage   | `findJobs`, `cancel`, `resume`, `retry`, `deleteJob`, `redrive`, `previewRedrive`, `getDependencies`, `getDependents`                             |
 | Schedule | `schedule`, `unschedule`, `getSchedule`, `getSchedules`                                                                                           |
 | Queue    | `getQueue`, `getQueueStats`, `updateQueue`, `deleteQueue`, `deleteQueuedJobs`, `deleteStoredJobs`, `deleteAllJobs`, `getBlockedKeys`, `supervise` |
@@ -399,10 +430,12 @@ const EmailJob = createJob<OrderPlacedData>("order-email", {
 await this.pubSub.publish(OrderPlaced, { orderId: "a1" });
 ```
 
-The compiler checks that a job's data can hold the event's payload. Subscribers are
-created at startup, but dropping an event from `subscribeTo` does not unsubscribe,
-because pg-boss has no way to list subscriptions. Call
-`pubSub.unsubscribe(OrderPlaced, EmailJob)` once.
+The compiler checks that a job's data can hold the event's payload. Subscriptions are
+created at startup. Dropping an event from `subscribeTo` does not unsubscribe, so a
+subscription made at runtime with `pubSub.subscribe()` survives a restart. Call
+`pubSub.unsubscribe(OrderPlaced, EmailJob)` once instead. `pubSub.getSubscriptions()`
+lists what is stored, and `pubSub.getSubscriptions(OrderPlaced)` lists one event's
+subscribers.
 
 #### Lifecycle events
 
@@ -442,26 +475,28 @@ and sends the data through JSON like the real thing. Its third argument override
 any field. The entry point also exports `TestClock` and its helpers.
 
 For tests against a real database, set `__test__enableSpies: true` on the module and
-wait on `jobService.getSpy().waitForJobWithId(id, "completed")`.
+wait on `jobService.getSpy().waitForJobWithId(id, "completed")`. Or send the jobs and
+`await jobService.drain()`, which resolves once the queue's handlers have worked
+everything that was ready.
 
 #### Everything else
 
 Anything not tied to one queue is available by injecting `PgBoss`, which is also
 exported here: `getQueues`, `getInstances`, `isInstalled`, `schemaVersion`,
 `detectSchemaDrift`, `getReindexCommands`, `getBamStatus`, `getBamEntries`,
-`getWipData`, `notifyWorker`, `previewSchedule`, `getDb` and the `is*` status
-checks. A wrapper would read exactly the same. `getJobById` is deprecated by pg-boss
-in favor of `findJobs`.
+`getWipData`, `notifyWorker`, `previewSchedule`, `getDb`, `drain()` across every
+queue, and the `is*` status checks. A wrapper would read exactly the same.
+`getJobById` is deprecated by pg-boss in favor of `findJobs`.
 
 All of pg-boss's runtime exports are re-exported: `getConstructionPlans`,
 `getMigrationPlans`, `getRollbackPlans`, `getUninstallPlans`, `getIndexBloatPlans`,
-`percentile`, `addBins`, `states`, `policies`, `scheduleKinds`, `events`, `TestClock`
-and the database adapters such as `fromKnex`. All of its types are re-exported too, so
-an application needs no import from `pg-boss`. Two have new names, because they mean
-something else here: pg-boss's `Job` is `PgBossJob`, since `Job` here is what
-`createJob` returns, and its `WorkHandler` is `PgBossWorkHandler`. The type of a `db`
-option or a transaction is `Db`, because pg-boss does not export `IDatabase` by that
-name.
+`percentile`, `addBins`, `states`, `policies`, `scheduleKinds`, `schedulePrecisions`,
+`events`, `TestClock` and the database adapters such as `fromKnex`. All of its types
+are re-exported too, so an application needs no import from `pg-boss`. Two have new
+names, because they mean something else here: pg-boss's `Job` is `PgBossJob`, since
+`Job` here is what `createJob` returns, and its `WorkHandler` is `PgBossWorkHandler`.
+The type of a `db` option or a transaction is `Db`, because pg-boss does not export
+`IDatabase` by that name.
 
 A test in this repository fails to compile when pg-boss gains a method or export that
 has not been given a place here.
@@ -510,10 +545,14 @@ keeps the ones inside jobs.
 
 #### Things to know about pg-boss
 
-- `expireInSeconds` is capped at 24 hours, and a handler still running by then fails,
+- `expireInSeconds` is capped at 14 days, and a handler still running by then fails,
   even with a healthy heartbeat. Split longer work into steps, for example with a flow.
   `heartbeatSeconds`, with a minimum of 10, is an addition to expiry and not a way
-  around it. It notices a dead worker sooner than a long expiry would.
+  around it. It notices a dead worker sooner than a long expiry would, because a
+  crashed worker otherwise holds its job until it expires.
+- A `transactional` handler needs `transactionTimeoutSeconds` for a job that can run
+  past 24 hours. On a queue whose `expireInSeconds` is above that, pg-boss refuses to
+  register the worker without it, so the app fails to start.
 - `update()` replaces a job's data rather than merging into it.
 - `retryDelayMax` needs `retryBackoff: true` declared next to it.
 - `insert()` resolves to the job ids only with `{ returnId: true }`, otherwise to
@@ -536,17 +575,14 @@ These come from pg-boss, and this package cannot fix them:
   test without this package involved. For a strict limit on one instance, use
   `localGroupConcurrency`. It does not coordinate across instances. For a strict
   limit across instances, use one queue per group with the `singleton` policy.
-- **Subscriptions cannot be listed,** so `subscribeTo` can add them but not remove
-  them.
 - **There is no way to hand back a claimed job without using a retry,** because
   pg-boss keeps that operation internal. That is one reason `drain` claims jobs one at
   a time rather than in batches.
-- **Work cannot run longer than 24 hours in one job,** because that is the cap on
+- **Work cannot run longer than 14 days in one job,** because that is the cap on
   `expireInSeconds`.
-- **TypeScript needs `skipLibCheck: true`.** pg-boss 12.38's declaration files refer
-  to a `ResolvedConstructorOptions` type they do not export, and to `pg` types they do
-  not depend on, so strict checking of `node_modules` fails with or without this
-  package.
+- **TypeScript needs `skipLibCheck: true`.** pg-boss's declaration files refer to `pg`
+  types it does not depend on, so strict checking of `node_modules` fails with or
+  without this package.
 - **Migrating a pg-boss 9 schema** is not possible, as described below.
 
 #### Inspect registered handlers

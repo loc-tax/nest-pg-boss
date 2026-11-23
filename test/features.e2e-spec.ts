@@ -205,6 +205,86 @@ describe("pg-boss features through this package (e2e)", () => {
         spy.waitForJobWithId(id ?? "", "completed"),
       ).resolves.toMatchObject({ data: { index: 7 } });
     });
+
+    describe("drain()", () => {
+      /** Long enough that a test only passes if drain(), not polling, did the work. */
+      const SLOW_POLL = { pollingIntervalSeconds: 60 } as const;
+
+      it("works its own queue's backlog and counts the jobs", async () => {
+        const DrainedJob = createJob<Item>("api-drain", { retryLimit: 0 });
+        const OtherJob = createJob<Item>("api-drain-other", { retryLimit: 0 });
+
+        @Injectable()
+        class Handlers {
+          readonly drained: number[] = [];
+          readonly other: number[] = [];
+
+          @DrainedJob.Handle(SLOW_POLL)
+          async handleDrained(job: PgBossJob<Item>) {
+            this.drained.push(job.data.index);
+            if (job.data.index === 0) {
+              throw new Error("fails on purpose");
+            }
+          }
+
+          @OtherJob.Handle(SLOW_POLL)
+          async handleOther(job: PgBossJob<Item>) {
+            this.other.push(job.data.index);
+          }
+        }
+
+        const app = await build({
+          jobs: [DrainedJob, OtherJob],
+          providers: [Handlers],
+        });
+        // After its first fetch finds nothing, a worker waits out the polling interval.
+        const boss = app.get(PgBoss);
+        await waitFor(() => {
+          const workers = boss.getWipData();
+          return (
+            workers.length === 2 &&
+            workers.every(({ lastFetchedOn }) => lastFetchedOn !== null)
+          );
+        });
+        await serviceOf(app, DrainedJob).insert(items(3));
+        await serviceOf(app, OtherJob).insert(items(1));
+
+        await expect(serviceOf(app, DrainedJob).drain()).resolves.toEqual({
+          processed: 3,
+          failed: 1,
+          timedOut: false,
+        });
+        expect(app.get(Handlers).drained).toHaveLength(3);
+        expect(app.get(Handlers).other).toEqual([]);
+      });
+
+      it("passes the timeout on", async () => {
+        const SlowJob = createJob<Item>("api-drain-timeout", { retryLimit: 0 });
+        let release!: () => void;
+        const released = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+
+        @Injectable()
+        class Handler {
+          @SlowJob.Handle(SLOW_POLL)
+          async handle(_job: PgBossJob<Item>) {
+            await released;
+          }
+        }
+
+        const app = await build({ jobs: [SlowJob], providers: [Handler] });
+        await serviceOf(app, SlowJob).send({ index: 1 });
+
+        try {
+          await expect(
+            serviceOf(app, SlowJob).drain({ timeoutSeconds: 0.5 }),
+          ).resolves.toMatchObject({ timedOut: true });
+        } finally {
+          release();
+        }
+      });
+    });
   });
 
   describe("module defaults", () => {
@@ -840,6 +920,38 @@ describe("pg-boss features through this package (e2e)", () => {
       );
     });
 
+    it("sends a job every few seconds with precision: second", async () => {
+      const EveryTwoSecondsJob = createJob<Item>("schedules-seconds", {
+        retryLimit: 0,
+        schedules: [
+          {
+            cron: "*/2 * * * * *",
+            data: { index: 2 },
+            options: { precision: "second" },
+          },
+        ],
+      });
+
+      @Injectable()
+      class Handler {
+        seen = 0;
+
+        @EveryTwoSecondsJob.Handle(POLL)
+        async handle(_job: PgBossJob<Item>) {
+          this.seen++;
+        }
+      }
+
+      const app = await build({
+        jobs: [EveryTwoSecondsJob],
+        providers: [Handler],
+        options: { cronMonitorIntervalSeconds: 1 },
+      });
+
+      // Without the option, a seconds field sends at most one job a minute.
+      await waitFor(() => app.get(Handler).seen >= 3, 20_000);
+    });
+
     it("actually sends the job when it comes due", async () => {
       const EveryMinuteJob = createJob<Item>("schedules-firing", {
         retryLimit: 0,
@@ -931,6 +1043,34 @@ describe("pg-boss features through this package (e2e)", () => {
       await expect(serviceOf(app, LateJob).findJobs()).resolves.toMatchObject([
         { data: { orderId: "b1" } },
       ]);
+    });
+
+    it("lists stored subscriptions, of one event or of all", async () => {
+      const ListedEvent = createEvent<OrderPlaced>("order-listed");
+      const ListedJob = createJob<OrderPlaced>("pubsub-listed", {
+        subscribeTo: [ListedEvent, OrderPlacedEvent],
+      });
+      const app = await build({ jobs: [ListedJob] });
+      const pubSub = app.get(PubSubService);
+
+      await expect(pubSub.getSubscriptions(ListedEvent)).resolves.toEqual([
+        expect.objectContaining({
+          event: "order-listed",
+          name: "pubsub-listed",
+        }),
+      ]);
+      await expect(pubSub.getSubscriptions()).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "order-listed",
+            name: "pubsub-listed",
+          }),
+          expect.objectContaining({
+            event: "order-placed",
+            name: "pubsub-listed",
+          }),
+        ]),
+      );
     });
 
     it("checks payloads at compile time", async () => {
