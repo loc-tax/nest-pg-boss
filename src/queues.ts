@@ -31,7 +31,10 @@ export type DefaultQueueOptions = Omit<
   "policy" | "partition" | "deadLetter"
 >;
 
-/** One recurring job. `options` holds `key`, `tz`, `missed` and send options. */
+/**
+ * One recurring job.
+ * `options` holds `key`, `tz`, `missed`, `precision` and send options.
+ */
 export interface JobSchedule<JobData extends object = any> {
   /** A cron expression or an RFC 5545 recurrence rule. */
   cron: string;

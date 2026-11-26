@@ -1,5 +1,10 @@
 import { Injectable } from "@nestjs/common";
-import { PgBoss, type SendOptions } from "pg-boss";
+import {
+  PgBoss,
+  type ListOptions,
+  type SendOptions,
+  type Subscription,
+} from "pg-boss";
 
 /** A pub/sub event, made by `createEvent`. `Payload` is only a type. */
 export interface PgBossEvent<Payload extends object = any> {
@@ -38,13 +43,25 @@ export class PubSubService {
   }
 
   /**
-   * `subscribeTo` never removes a subscription, because pg-boss offers no way to
-   * list them. After dropping an event from `subscribeTo`, call this once.
+   * `subscribeTo` only adds subscriptions, so one made at runtime with `subscribe` survives a restart.
+   * After dropping an event from `subscribeTo`, call this once.
    */
   async unsubscribe(
     event: PgBossEvent,
     job: { queueName: string },
   ): Promise<void> {
     await this.boss.unsubscribe(event.eventName, job.queueName);
+  }
+
+  /**
+   * The stored subscriptions to one event, or to every event.
+   * `name` on each is the subscribed queue.
+   * pg-boss returns at most 1000 unless `options.limit` says otherwise.
+   */
+  async getSubscriptions(
+    event?: PgBossEvent,
+    options?: ListOptions<Pick<Subscription, "event" | "name">>,
+  ): Promise<Subscription[]> {
+    return this.boss.getSubscriptions(event?.eventName, options);
   }
 }

@@ -11,6 +11,8 @@ import {
   type ConnectionOptions,
   type Db,
   type DependencyRef,
+  type DrainOptions,
+  type DrainResult,
   type FetchOptions,
   type FindJobsOptions,
   type InsertOptions,
@@ -205,6 +207,19 @@ export class JobService<JobData extends object> {
     if (stopOptions.wait) {
       this.workerGroups.delete(groupId);
     }
+  }
+
+  /**
+   * Runs this queue's workers back to back until none finds a ready job, then resolves with how many jobs they handled.
+   * For a process that works the queue and exits, such as a cron job or a test.
+   * Jobs waiting on `startAfter` or a retry delay are not ready, so it does not wait for them.
+   * Only this instance's workers count.
+   * On an instance with no handler for the queue, or with `disableWorkers`, it resolves at once with nothing handled.
+   * Called from this queue's own handler, it waits for that handler, because the handler's worker cannot fetch again until it returns.
+   * Without `timeoutSeconds`, that call hangs until the job expires, and then the job fails.
+   */
+  async drain(options?: DrainOptions): Promise<DrainResult> {
+    return this.pgBoss.drain(this.name, options);
   }
 
   /** Groups stopped without `wait` cannot be forgotten at the time. */
