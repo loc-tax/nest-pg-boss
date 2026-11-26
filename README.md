@@ -282,8 +282,12 @@ await app.close();
 `JobService.drain()` does the same for one queue. Jobs waiting on `startAfter` or a
 retry delay are not ready, so `drain()` does not wait for them. At `timeoutSeconds` it
 resolves without waiting for jobs still running, and closing the app stops pg-boss,
-which waits for them as usual. An instance with `disableWorkers` has no workers to run,
-so `drain()` resolves at once.
+which waits for them as usual. Only this instance's workers count, so on an instance
+with `disableWorkers` or without a handler for the queue, `drain()` resolves at once.
+
+Don't call `drain()` from a handler of a queue it covers. It waits for that handler,
+whose worker cannot fetch again until the handler returns. Without `timeoutSeconds` the
+call hangs until the job expires, and then the job fails.
 
 `Handle({ drain: true })` changes how a worker polls for as long as the app runs.
 `drain()` is one call that resolves once nothing is ready, and the workers go back to
@@ -576,8 +580,8 @@ These come from pg-boss, and this package cannot fix them:
   `localGroupConcurrency`. It does not coordinate across instances. For a strict
   limit across instances, use one queue per group with the `singleton` policy.
 - **There is no way to hand back a claimed job without using a retry,** because
-  pg-boss keeps that operation internal. That is one reason `drain` claims jobs one at
-  a time rather than in batches.
+  pg-boss keeps that operation internal. That is one reason `Handle({ drain: true })`
+  claims jobs one at a time rather than in batches.
 - **Work cannot run longer than 14 days in one job,** because that is the cap on
   `expireInSeconds`.
 - **TypeScript needs `skipLibCheck: true`.** pg-boss's declaration files refer to `pg`
@@ -610,7 +614,7 @@ instantiated; the scan only sees providers that already have an instance.
 
 `metadata.workOptions` holds the effective options, including `defaultWorkOptions`. So
 `localConcurrency ?? 1` is the number of workers this instance runs for the handler,
-also with `drain`.
+also with `drain: true`.
 
 ## Migrating from pg-boss 9
 

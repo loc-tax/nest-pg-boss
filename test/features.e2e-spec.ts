@@ -1071,6 +1071,9 @@ describe("pg-boss features through this package (e2e)", () => {
           }),
         ]),
       );
+      await expect(
+        pubSub.getSubscriptions(undefined, { limit: 1 }),
+      ).resolves.toHaveLength(1);
     });
 
     it("checks payloads at compile time", async () => {
